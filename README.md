@@ -8,12 +8,16 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 
 > ### How to run
 > 1. Open the project in a **recent Chrome, Edge, Brave or Opera, or Firefox 153+**. **Safari cannot run Qollab projects.**
-> 2. Press **Run**. In *Select QPU*, choose the **built-in simulator** (fastest) or an **IonQ simulator**. Either one gets **exactly one job**.
-> 3. Precomputed results (map, schedules, charts) draw at once. The live run then samples every QAOA cluster in a single backend job (1,024 shots) and repairs the stitched schedule. Greedy and simulated annealing run live next to it. Expect well under a minute on the built-in simulator; IonQ's noise-model simulators queue remotely and take longer.
-> 4. What to look for:
->    - **Live run** table: the ratio of each method to the exact optimum.
->    - **Console**: one line saying `one job sent to backend with 9 circuit(s)`, followed by every repair action.
->    - **Map**: switches to this run's schedule when the run finishes.
+> 2. Press **Run**. In *Select QPU*, choose the **built-in simulator** (fastest) or an **IonQ simulator**. Either one gets **exactly one job**. *Run settings* offers `shots` (default 1024) and `charts` (default on).
+> 3. `main.py` runs the default scenario: the top 10 districts over the first 24 h, 68 candidate images, 9 QAOA clusters.
+>    - It sends **all 9 cluster circuits to the backend in a single job**, then stitches and repairs the schedule.
+>    - It runs greedy and simulated annealing live and compares every method with the exact optimum.
+>    - It then draws four figures in the console: this run's schedule map, followed by the precomputed connectivity, diversity and quality charts.
+> 4. What to look for in the console:
+>    - the line `one job sent to backend with 9 circuit(s)`;
+>    - every repair action;
+>    - the results table (ratio to optimum, 1.000 = optimal);
+>    - the honest verdict line.
 
 > ### Honest verdict
 > **At this size, classical methods find schedules at least as good as the hybrid**:
@@ -53,6 +57,10 @@ One commercial link to this track: **IonQ completed its acquisition of Capella S
 - Propagated with SGP4 over **48 h**.
 
 **Important caveat:** CelesTrak serves only current orbital elements, so this is today's constellation replayed over the 2022 flood locations. It is not a reconstruction of the passes that existed in June 2022.
+
+![Exact optimal schedule on the real event](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/map_exact.png)
+
+*Districts sized by people affected and coloured by priority; orange rings mark districts imaged in the exact optimal schedule.*
 
 ## 2. Formulation
 
@@ -121,6 +129,8 @@ The benchmark has 21 instances: the real event plus 20 seeded perturbations. Eac
 | Hybrid QAOA (warm start, p=1) | 0.966 | 0.949 ± 0.038 | 0.886 |
 | *Control: same decomposition, exact per cluster* | 0.966 | 0.949 ± 0.038 | 0.886 |
 
+![Schedule quality on 21 instances](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/ratios.png)
+
 The hybrid matches the control on **all 21 instances**: with 1,024 shots, QAOA finds every cluster's optimum. The loss comes from decomposition. The real conflict graph is one connected component, and in our partition into ≤12-qubit clusters **75% of conflicts (2,534 of 3,380) cross cluster boundaries**. Repair handles those conflicts but loses value in doing so.
 
 ### Fair diversity comparison: same QUBO, same 1,024-sample budget
@@ -134,6 +144,8 @@ The question: does QAOA sampling give more distinct good backup plans, useful if
 | Full schedule: hybrid (stitched + repaired) | 1.00 | 136 ± 96 | 18.8 ± 1.8 |
 | Full schedule: SA (1,024 restarts, 1,000 sweeps) | 1.00 | **303 ± 96** | **26.4 ± 1.4** |
 
+![QAOA vs SA at the same sample budget](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/diversity.png)
+
 **Per cluster** (670 clusters with ≥4 candidates), QAOA found more distinct near-optimal schedules than SA in 59 clusters, fewer in 1, and the same number in 610. That is a small, consistent edge, bought with 30% infeasible samples.
 
 **For whole schedules, SA clearly wins**: it gives about twice as many good plans, and more varied ones. We report both levels because the per-cluster result alone would overstate what QAOA delivers.
@@ -144,6 +156,8 @@ We took subgraphs of the real conflict graph and compiled the QAOA circuit with 
 - **all-to-all**, as on trapped-ion hardware;
 - a **square grid**;
 - **heavy-hex**.
+
+![Two-qubit gates: all-to-all vs grid vs heavy-hex](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/connectivity_p1.png)
 
 | Qubits | Density | 2q gates, all-to-all | 2q gates, grid | 2q gates, heavy-hex | Est. success, all / grid / hex |
 | --- | --- | --- | --- | --- | --- |
@@ -241,19 +255,21 @@ We have not shown that QAOA beats classical methods at any size.
 ## 10. Reproduce
 
 ```bash
-python3.12 -m venv .venv && .venv/bin/pip install -r preprocessing/requirements-offline.txt qiskit-aer
+python3.12 -m venv .venv && .venv/bin/pip install -r preprocessing/requirements-offline.txt qiskit-aer matplotlib
 .venv/bin/python preprocessing/compute_windows.py     # orbits -> data/windows.json
-.venv/bin/python preprocessing/run_experiments.py     # E1, E-DIV, E-CONN, E2, E3, E5 -> results/  (~4 min, 8 cores)
+.venv/bin/python preprocessing/run_experiments.py     # E1, E-DIV, E-CONN, E2, E3, E5 -> results/  (~5 min, 8 cores)
 .venv/bin/python preprocessing/run_noise.py           # E4 -> results/e4.json
-.venv/bin/python preprocessing/build_ui_data.py       # -> ui/data.js
-.venv/bin/python -m pytest -q tests                   # 17 tests
+.venv/bin/python preprocessing/save_figures.py        # -> docs/figures/*.png
+.venv/bin/python preprocessing/build_ui_data.py       # -> ui/data.js (optional interactive page)
+.venv/bin/python -m pytest -q tests                   # all tests
+.venv/bin/python preprocessing/package_qollab.py      # -> dist/floodsight-q.zip for Qollab
 ```
 
 ## Repository layout
 
 | Path | Contents |
 | --- | --- |
-| `index.html`, `main.js`, `main.css`, `ui/` | Page; plain SVG, no external libraries |
+| `main.py` | Qollab entry point: Run calls `main(shots, charts)` |
 | `fsq/` | Python package |
 | `fsq/api.py` | Run-button entry point |
 | `fsq/formulate.py` | Candidates, values, conflicts, QUBO and Ising forms |
@@ -262,10 +278,12 @@ python3.12 -m venv .venv && .venv/bin/pip install -r preprocessing/requirements-
 | `fsq/qaoa.py` | Warm/cold QAOA, CVaR, one-job sampling |
 | `fsq/connectivity.py` | Connectivity comparison |
 | `fsq/diversity.py`, `fsq/metrics.py` | Diversity comparison and metrics |
+| `fsq/plots.py` | Figures, used live and saved to `docs/figures/` |
 | `data/` | Shipped data and its README |
 | `results/` | Experiment outputs (JSON) |
 | `preprocessing/` | Offline scripts, CPython only |
 | `tests/` | pytest suite |
+| `index.html`, `main.js`, `main.css`, `ui/` | Optional interactive web page (GitHub only). It is left out of the Qollab upload so Qollab runs `main.py` as a Python project. |
 
 **Links:** demo video, *to be added* · repository: <https://github.com/DurgaPritam/qollab-hackathon>
 

@@ -47,3 +47,11 @@ def test_failing_backend_falls_back_locally_without_second_job():
     r = json.loads(api.run_default(Broken(), shots=128))
     assert Broken.calls == 1
     assert "sampled locally" in r["note"]
+
+
+@pytest.mark.skipif(not os.path.exists("data/instance_default.json"), reason="run preprocessing first")
+def test_main_py_entry_point(capsys):
+    import main
+    main.main(shots=128, charts=False)
+    out = capsys.readouterr().out
+    assert "Honest verdict" in out and "Total runtime" in out

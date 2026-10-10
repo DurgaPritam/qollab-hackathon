@@ -9,8 +9,9 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
 
-INCLUDE_TOP = ["index.html", "main.js", "main.css", "README.md", "LICENSE", "requirements.txt"]
-INCLUDE_DIRS = ["ui", "fsq", "data", "results", "preprocessing", "tests"]
+# Python project: main.py at the top level and NO index.html/main.js (those would make Qollab run it as JS).
+INCLUDE_TOP = ["main.py", "README.md", "LICENSE", "requirements.txt"]
+INCLUDE_DIRS = ["fsq", "data", "results", "preprocessing", "tests"]
 SKIP = ("__pycache__", ".pyc", ".DS_Store")
 MAX_FILES, MAX_BYTES = 100, 2 * 1024 * 1024
 
@@ -25,6 +26,7 @@ def files():
 
 def main():
     fs = files()
+    assert not any(f in fs for f in ("index.html", "main.js")), "would run as a JS project"
     big = [(f, os.path.getsize(f)) for f in fs if os.path.getsize(f) > MAX_BYTES]
     assert len(fs) <= MAX_FILES, f"{len(fs)} files > {MAX_FILES}"
     assert not big, f"files over 2 MB: {big}"
