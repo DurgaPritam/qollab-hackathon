@@ -17,6 +17,10 @@ CONFIG = {
     "alpha": 0.2,                 # CVaR fraction
     "p": 1,                       # QAOA depth for the default run
     "shots": 1024,
-    "ionq_qubit_budget": 25,      # IONQ_QUBIT_BUDGET: used when the backend does not report num_qubits
+    # IONQ_QUBIT_BUDGET: qubits packed into the single IonQ circuit, capped by backend.num_qubits.
+    # 12 = the largest cluster alone. A 21-qubit packed circuit failed on Qollab's IonQ Aria 1
+    # simulator with "NotEnoughQubits" (Oct 10), and a failed IonQ job cannot be retried in the
+    # same run, so the default is the safe one. Raise to 21 (clusters 1+2) once that is verified.
+    "ionq_qubit_budget": 12,
     "seed": 7,
 }

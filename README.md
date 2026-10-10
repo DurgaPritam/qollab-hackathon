@@ -10,7 +10,7 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 > 1. Open the project in **Chrome or Edge** (Brave, Opera and Firefox 153+ also work). **Safari cannot run Qollab projects.**
 > 2. Click **Run Project**. In *Select QPU*, choose one of:
 >    - **Built-in simulator (24q):** about **23 s** on the first run (Qollab loads its packages) and about **9 s** after; our Python code itself takes 1–3 s.
->    - **IonQ Aria 1 (25q):** a remote noise-model simulator that may queue. IonQ accepts **one circuit per job**, so the run packs as many QAOA clusters as fit into **one** circuit on disjoint qubits and submits **one** job. The other clusters are sampled locally, and the console lists which ran where.
+>    - **IonQ Aria 1 (25q):** a remote noise-model simulator that may queue. IonQ accepts **one circuit per job**. By default the run sends the **largest cluster (12 qubits)** to IonQ as that one circuit and samples the other 7 clusters locally; the console lists which ran where. See *IonQ qubit budget* below.
 >
 >    *Run settings* offers `shots` (default 1024) and `charts` (default on).
 > 3. What the run does (the default scenario: top 10 districts over the first 24 h, 68 candidate images, 8 QAOA clusters of 5–12 qubits):
@@ -21,7 +21,7 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 >    - draws four figures.
 > 4. What to look for:
 >    - **where each cluster ran** (backend or local);
->    - **the results table**: its hybrid row names where sampling actually happened, e.g. `Hybrid QAOA (IonQ: 2 clusters / 21 qubits; local: 6 clusters)`;
+>    - **the results table**: its hybrid row names where sampling actually happened, e.g. `Hybrid QAOA (IonQ: 1 cluster / 12 qubits; local: 7 clusters)`;
 >    - **the "where the gap comes from" line**;
 >    - **the honest verdict**.
 >
@@ -115,7 +115,12 @@ We made these deliberately strong, because the comparison is only credible if th
    - Use the mixer $R_Y(\theta_i)\,R_Z(-2\beta)\,R_Y(-\theta_i)$.
 3. **CVaR objective** (Barkoutsos et al., *Quantum* 4, 256, 2020), with α = 0.2. Angles are optimised with COBYLA **offline only**, on an exact statevector simulator that the tests check against Qiskit's `Statevector`.
 4. **One-job sampling.** IonQ allows **one job per run and one circuit per job**; we confirmed the second limit on Qollab, where a multi-circuit job was rejected with `IonQAPIError 400: "Only job type ionq.circuit.v1 is supported"`.
-   - **On IonQ:** clusters are independent subproblems, so we place several side by side on **disjoint qubits of one circuit**. We bin-pack largest first, up to `backend.num_qubits` (25 on Aria 1). A joint measurement of that circuit gives independent samples for each cluster. We split the counts back per cluster by marginalising over each cluster's qubit range, using Qiskit's little-endian bit order; a unit test covers this. Clusters that do not fit are sampled locally.
+   - **On IonQ:** clusters are independent subproblems, so several can sit side by side on **disjoint qubits of one circuit**. We bin-pack largest first, up to a qubit budget. A joint measurement of that circuit gives independent samples for each cluster. We split the counts back per cluster by marginalising over each cluster's qubit range, using Qiskit's little-endian bit order; a unit test covers this. Clusters that do not fit are sampled locally.
+   - **Before submitting**, the run prints the circuit's width and checks it has exactly the packed number of qubits and classical bits. The circuit is only rewritten to basis gates, with no backend layout, so nothing pads it; IonQ compiles it afterwards.
+   - **IonQ qubit budget:** the budget is `min(backend.num_qubits, IONQ_QUBIT_BUDGET)`, and the default `IONQ_QUBIT_BUDGET` is **12**, i.e. the largest cluster alone.
+     - Why: on Qollab's IonQ Aria 1 simulator, a 21-qubit packed circuit (clusters 1 and 2) was accepted but failed with `NotEnoughQubits`, although 21 < 25. We verified that the submitted circuit had exactly 21 qubits and 21 classical bits; the cause is on the IonQ side and still unknown.
+     - Because IonQ allows one job per run, a failed job cannot be retried, so the default is the size known to work.
+     - To raise it, set `"ionq_qubit_budget"` in `fsq/config.py`, e.g. to 21 for clusters 1 and 2, once that size has been verified on the selected IonQ backend.
    - **On local simulators:** clusters go as a list of separate circuits in one job. They are not packed, because a ~24-qubit statevector is too heavy for the browser.
    - **If a backend job fails:** nothing more is sent. Everything is sampled locally, and the results row says `sampled locally - … job failed`. The label never names a backend that was not used.
 5. **Stitch and repair.**

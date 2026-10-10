@@ -54,16 +54,60 @@ def test_default_run_end_to_end_local_simulator():
 
 
 @needs_default
-def test_ionq_packs_clusters_into_one_circuit():
+def test_ionq_default_budget_sends_largest_cluster_only():
     from fsq.api import run_default
-    be = FakeIonQ(num_qubits=17)          # 12 + 5 qubits fit; the rest run locally
+    be = FakeIonQ(num_qubits=25)          # default IONQ_QUBIT_BUDGET = 12 -> cluster 1 alone
     r = json.loads(run_default(be, shots=128))
     s = r["sampling"]
     assert be.jobs == 1 and not isinstance(be.sent[0], list)
     assert s["mode"] == "packed" and s["error"] is None
-    assert s["remote_qubits"] <= 17 and len(s["remote"]) == 2
-    assert sorted(s["remote"] + s["local"]) == list(range(len(s["remote"]) + len(s["local"])))
-    assert r["hybrid_label"].startswith("Hybrid QAOA (IonQ: 2 clusters / 17 qubits; local:")
+    assert s["remote"] == [0] and s["remote_qubits"] == 12
+    assert be.sent[0].num_qubits == 12 and be.sent[0].num_clbits == 12
+    assert r["hybrid_label"] == "Hybrid QAOA (IonQ: 1 cluster / 12 qubits; local: 7 clusters)"
+
+
+@needs_default
+def test_ionq_raised_budget_packs_two_clusters_at_natural_width():
+    from fsq.data_load import load_default_instance
+    from fsq.hybrid import cluster_circuit
+    from fsq.qaoa import sample_clusters
+    inst = load_default_instance()
+    circs = [cluster_circuit(c, c["params"]) for c in inst["clusters"] if len(c["nodes"]) > 1]
+    be = FakeIonQ(num_qubits=17)
+    counts, info = sample_clusters(be, circs, 64, 7, ionq_budget=25)   # capped by the backend: 17
+    assert info["budget"] == 17 and info["error"] is None
+    assert info["remote"] == [0, 7] and info["remote_qubits"] == 17      # 12 + 5
+    sent = be.sent[0]
+    assert sent.num_qubits == 17 and sent.num_clbits == 17
+    assert info["circuit"]["qubits_used"] == list(range(17))
+    assert all(sum(c.values()) == 64 for c in counts)
+
+
+def test_packed_circuit_width_equals_sum_of_packed_sizes():
+    from qiskit import QuantumCircuit
+    from fsq.qaoa import _transpile_portable, combine_circuits, pack_clusters
+    circs = []
+    for n in (12, 9, 9, 5):
+        qc = QuantumCircuit(n)
+        for i in range(n - 1):
+            qc.rzz(0.3, i, i + 1)
+        qc.measure_all()
+        circs.append(qc)
+    for budget in (12, 21, 25, 26, 35):
+        packed, offsets = pack_clusters([c.num_qubits for c in circs], budget)
+        want = sum(circs[k].num_qubits for k in packed)
+        sent = _transpile_portable(combine_circuits([circs[k] for k in packed], offsets))
+        assert sent.num_qubits == want and sent.num_clbits == want
+
+
+def test_qubit_budget_is_min_of_backend_and_config():
+    from fsq.qaoa import qubit_budget
+
+    class B:
+        num_qubits = 25
+    assert qubit_budget(B(), 12) == 12
+    assert qubit_budget(B(), 40) == 25
+    assert qubit_budget(object(), 12) == 12
 
 
 @needs_default

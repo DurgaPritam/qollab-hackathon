@@ -55,8 +55,9 @@ def hybrid_label(bname: str, info: dict, n_clusters: int, sizes: list[int]) -> s
         return f"Hybrid QAOA (sampled locally - {who} job failed)"
     r, l = info["remote"], info["local"]
     if info["mode"] == "packed":
-        lab = f"IonQ: {len(r)} clusters / {info['remote_qubits']} qubits"
-        return f"Hybrid QAOA ({lab}; local: {len(l)} clusters)" if l else f"Hybrid QAOA ({lab})"
+        cl = lambda k: f"{k} cluster" + ("" if k == 1 else "s")  # noqa: E731
+        lab = f"IonQ: {cl(len(r))} / {info['remote_qubits']} qubits"
+        return f"Hybrid QAOA ({lab}; local: {cl(len(l))})" if l else f"Hybrid QAOA ({lab})"
     return f"Hybrid QAOA ({bname}: all {n_clusters} clusters)"
 
 
@@ -105,8 +106,10 @@ def run_default(backend=None, shots: int = 1024, seed: int = 7) -> str:
     qsizes = [c.num_qubits for c in circuits]
     cid = lambda j: qidx[j] + 1  # noqa: E731  (1-based cluster ids, as printed)
     if info["mode"] == "packed" and not info["error"]:
-        print(f"  IonQ (one circuit per job): packed {len(info['remote'])} clusters into ONE "
-              f"{info['remote_qubits']}-qubit circuit (budget {info['budget']} qubits), ONE job")
+        k = len(info["remote"])
+        print(f"  IonQ (one circuit per job): {k} cluster{'' if k == 1 else 's'} in ONE "
+              f"{info['remote_qubits']}-qubit circuit (budget {info['budget']} qubits = min(backend size, "
+              f"IONQ_QUBIT_BUDGET)), ONE job")
     elif info["mode"] == "list" and not info["error"]:
         print(f"  one job on {bname} with {len(circuits)} circuits (one per cluster)")
     if info["error"]:

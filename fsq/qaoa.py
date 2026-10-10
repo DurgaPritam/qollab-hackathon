@@ -272,16 +272,23 @@ def is_ionq(backend) -> bool:
     return any("ionq" in n.lower() for n in names)
 
 
-def qubit_budget(backend, default: int) -> int:
-    """backend.num_qubits when the backend reports it, else `default`."""
+def qubit_budget(backend, budget: int) -> int:
+    """min(backend.num_qubits, budget); just `budget` if the backend does not report a size."""
     try:
         n = getattr(backend, "num_qubits", None)
         n = n() if callable(n) else n
         if n:
-            return int(n)
+            return min(int(n), int(budget))
     except Exception:
         pass
-    return int(default)
+    return int(budget)
+
+
+def circuit_width_report(qc) -> dict:
+    """num_qubits, num_clbits, depth and the qubit indices that gates actually touch."""
+    used = sorted({qc.find_bit(q).index for ins in qc.data for q in ins.qubits})
+    return {"num_qubits": qc.num_qubits, "num_clbits": qc.num_clbits, "depth": qc.depth(),
+            "qubits_used": used}
 
 
 def pack_clusters(sizes: list[int], budget: int) -> tuple[list[int], list[int]]:
@@ -341,12 +348,13 @@ def _counts_from_result(res, pos: int, n_circuits: int) -> dict:
         return dict(allc[pos] if isinstance(allc, list) else allc)
 
 
-def sample_clusters(backend, circuits: list, shots: int, seed: int, ionq_budget: int = 25) -> tuple[list[dict], dict]:
+def sample_clusters(backend, circuits: list, shots: int, seed: int, ionq_budget: int = 12) -> tuple[list[dict], dict]:
     """Final sampling with at most ONE backend job, and an exact record of where each
     cluster was sampled.
 
     * IonQ (one circuit per job): bin-pack clusters into one combined circuit on disjoint
-      qubits (budget = backend.num_qubits, else `ionq_budget`); the rest run locally.
+      qubits (budget = min(backend.num_qubits, `ionq_budget`)); the rest run locally. The
+      circuit is checked to have exactly the packed width before it is submitted.
     * Other backends (local simulators): one job with the list of circuits, largest cluster
       submitted last (Qollab's Probabilities panel shows the last circuit). No packing: a
       ~24-qubit statevector is too heavy for the browser.
@@ -366,14 +374,25 @@ def sample_clusters(backend, circuits: list, shots: int, seed: int, ionq_budget:
         packed, offsets = pack_clusters(sizes, budget)
         info.update(mode="packed", budget=budget)
         try:
+            # Natural width: basis-gate rewrite only (no backend, no coupling map, no layout),
+            # so the circuit keeps exactly the packed qubit count; IonQ compiles it afterwards.
             combined = _transpile_portable(combine_circuits([circuits[k] for k in packed], offsets))
+            want = sum(sizes[k] for k in packed)
+            rep = circuit_width_report(combined)
+            info["circuit"] = rep
+            u = rep["qubits_used"]
+            print(f"  packed circuit before submit: num_qubits={rep['num_qubits']}, num_clbits={rep['num_clbits']}, "
+                  f"depth={rep['depth']}, qubits used {u[0]}..{u[-1]} ({len(u)} of {want} packed)")
+            if rep["num_qubits"] != want or rep["num_clbits"] != want:
+                raise ValueError(f"packed circuit has {rep['num_qubits']} qubits / {rep['num_clbits']} clbits, "
+                                 f"expected {want}; not submitted")
             res = backend.run(combined, shots=shots).result()
             joint = _counts_from_result(res, 0, 1)
             for k, o in zip(packed, offsets):
                 counts[k] = marginal_counts(joint, o, sizes[k])
             info.update(remote=packed, remote_qubits=sum(sizes[k] for k in packed),
                         panel=f"the single packed circuit ({sum(sizes[k] for k in packed)} qubits, "
-                              f"clusters {', '.join(str(k + 1) for k in sorted(packed))})")
+                              f"cluster{'' if len(packed) == 1 else 's'} {', '.join(str(k + 1) for k in sorted(packed))})")
         except Exception as e:  # never send a second job
             info["error"] = f"{type(e).__name__}: {str(e)[:160]}"
     else:
