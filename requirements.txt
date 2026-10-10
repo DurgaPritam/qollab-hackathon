@@ -1,0 +1,2 @@
+# Qollab runtime (Pyodide). NumPy and SciPy ship with Pyodide and need no line here.
+qiskit>=2.5.2,<3.0.0

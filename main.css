@@ -1,0 +1,76 @@
+.viz-root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --plane: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --s1: #2a78d6;  /* blue   */
+  --s2: #eb6834;  /* orange */
+  --s3: #1baf7a;  /* aqua   */
+  --s4: #eda100;  /* yellow */
+  --p1: #86b6ef; --p2: #5598e7; --p3: #2a78d6; --p4: #1c5cab; --p5: #104281;
+  --land: #f0efec;
+  --banner: #fff6e0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  background: var(--plane);
+  line-height: 1.45;
+  padding: 16px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --plane: #0d0d0d; --text-primary: #f0efec; --text-secondary: #c3c2b7;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --p1: #184f95; --p2: #256abf; --p3: #3987e5; --p4: #6da7ec; --p5: #9ec5f4;
+    --land: #262624; --banner: #2e2716;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --surface-1: #1a1a19; --plane: #0d0d0d; --text-primary: #f0efec; --text-secondary: #c3c2b7;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255, 255, 255, 0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --p1: #184f95; --p2: #256abf; --p3: #3987e5; --p4: #6da7ec; --p5: #9ec5f4;
+  --land: #262624; --banner: #2e2716;
+}
+
+.viz-root h1 { font-size: 28px; margin: 4px 0; }
+.viz-root h2 { font-size: 18px; margin: 0 0 8px; }
+.viz-root h3 { font-size: 15px; margin: 16px 0 6px; color: var(--text-secondary); }
+.sub { color: var(--text-secondary); margin: 0 0 12px; }
+.banner { background: var(--banner); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 16px 0; }
+.caption, .status { color: var(--text-secondary); font-size: 14px; margin: 4px 0 10px; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 8px; font-size: 14px; }
+.controls select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--axis); background: var(--surface-1); color: var(--text-primary); }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }
+.seg button { font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--text-primary); padding: 5px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--axis); }
+.seg button[aria-checked="true"] { background: var(--text-primary); color: var(--surface-1); }
+.two { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; }
+@media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+.map svg, #gantt svg, #div-chart svg, #conn-chart svg { width: 100%; height: auto; display: block; }
+.pass-list { font-size: 13px; max-height: 420px; overflow: auto; }
+.pass-list ol { padding-left: 20px; margin: 0; }
+.pass-list li { margin-bottom: 4px; }
+table.t { border-collapse: collapse; font-size: 13px; width: 100%; font-variant-numeric: tabular-nums; }
+table.t th, table.t td { border-bottom: 1px solid var(--grid); padding: 5px 8px; text-align: right; }
+table.t th:first-child, table.t td:first-child { text-align: left; }
+table.t th { color: var(--text-secondary); font-weight: 600; }
+.tbl-wrap { overflow-x: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--text-secondary); margin: 6px 0; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+.tip { position: fixed; pointer-events: none; background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0,0,0,.15); border-radius: 6px; padding: 6px 8px; font-size: 12px; z-index: 10; display: none; max-width: 260px; }
+.foot { color: var(--text-secondary); font-size: 13px; }
+.note { font-size: 13px; color: var(--text-secondary); }
+svg text { fill: var(--text-secondary); font-size: 11px; }
+svg .lbl { fill: var(--text-primary); font-size: 11px; }

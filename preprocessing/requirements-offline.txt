@@ -1,0 +1,8 @@
+# Offline only (CPython 3.12): preprocessing and experiments. Never imported by the Qollab run.
+qiskit==2.5.2
+numpy==2.5.3
+scipy==1.18.1
+networkx==3.7
+skyfield==1.55
+sgp4==2.27
+pytest

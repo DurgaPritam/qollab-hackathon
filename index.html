@@ -1,0 +1,61 @@
+<div class="viz-root" id="app">
+  <header class="hero">
+    <h1>FloodSight&nbsp;Q</h1>
+    <p class="sub">Which flooded places should radar satellites image first? A hybrid classical&ndash;quantum
+      scheduler, measured honestly against strong classical baselines on real orbits.</p>
+    <div class="banner" role="note">
+      <strong>Honest verdict.</strong> At this size, classical methods find schedules at least as good as
+      the hybrid. Below: what the quantum part adds, measured fairly, and when it might matter.
+    </div>
+  </header>
+
+  <section class="card" aria-labelledby="live-h">
+    <h2 id="live-h">Live run</h2>
+    <p id="live-status" class="status">Loading precomputed results&hellip;</p>
+    <div id="live-table"></div>
+  </section>
+
+  <section class="card" aria-labelledby="map-h">
+    <h2 id="map-h">Flood targets and schedules</h2>
+    <div class="controls" role="group" aria-label="Instance and method">
+      <label>Instance <select id="inst-select"></select></label>
+      <span id="method-buttons" class="seg" role="radiogroup" aria-label="Method"></span>
+    </div>
+    <p id="map-caption" class="caption"></p>
+    <div class="two">
+      <div id="map" class="map"></div>
+      <div id="pass-list" class="pass-list"></div>
+    </div>
+    <h3>Imaging timeline per satellite</h3>
+    <div id="gantt"></div>
+  </section>
+
+  <section class="card" aria-labelledby="res-h">
+    <h2 id="res-h">Results across 21 instances</h2>
+    <p class="caption">Approximation ratio = schedule value / exact (MILP) optimum. The real event plus 20 seeded
+      perturbations (priority and timing noise).</p>
+    <div id="ratio-table"></div>
+  </section>
+
+  <section class="card" aria-labelledby="div-h">
+    <h2 id="div-h">Fair diversity comparison: QAOA vs simulated annealing, same sample budget</h2>
+    <p class="caption" id="div-caption"></p>
+    <div id="div-chart"></div>
+    <div id="div-table"></div>
+  </section>
+
+  <section class="card" aria-labelledby="conn-h">
+    <h2 id="conn-h">Connectivity: dense conflict graphs on all-to-all vs nearest-neighbour hardware</h2>
+    <p class="caption" id="conn-caption"></p>
+    <div class="controls"><span id="conn-p" class="seg" role="radiogroup" aria-label="QAOA depth"></span></div>
+    <div id="conn-chart"></div>
+    <div id="conn-table"></div>
+  </section>
+
+  <section class="card" aria-labelledby="more-h">
+    <h2 id="more-h">Other experiments</h2>
+    <div id="more"></div>
+  </section>
+
+  <footer class="foot" id="foot"></footer>
+</div>

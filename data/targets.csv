@@ -1,0 +1,26 @@
+target_id,name,lat,lon,population,priority,source,hq,villages,deaths,camp_inmates,displacement_share
+AS-CAC,Cachar,24.82,92.8,1434750,5,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Silchar),Silchar,826,48,303694,0.2117
+AS-BAR,Barpeta,26.32,91.0,1213060,5,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Barpeta),Barpeta,660,18,118713,0.0979
+AS-KAM,Kamrup,26.1883,91.6783,897119,2,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikidata (Amingaon),Amingaon,591,8,15978,0.0178
+AS-DHU,Dhubri,26.02,90.0,605805,2,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Dhubri),Dhubri,891,5,10307,0.017
+AS-NAG,Nagaon,26.3504,92.6796,567942,5,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Nagaon),Nagaon,381,29,23663,0.0417
+AS-DAR,Darrang,26.43,92.03,557901,2,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikidata (Mangaldoi),Mangaldoi,498,9,8766,0.0157
+AS-NAL,Nalbari,26.445,91.44,499090,4,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Nalbari),Nalbari,425,6,33982,0.0681
+AS-BAJ,Bajali,26.4994,91.1793,356000,3,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikidata (Pathsala),Pathsala,173,3,6909,0.0194
+AS-BON,Bongaigaon,26.4769,90.5583,339481,3,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Bongaigaon),Bongaigaon,351,,10916,0.0322
+AS-KAR,Karimganj,24.87,92.35,308581,5,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Karimganj),Karimganj,729,10,29332,0.0951
+AS-GOA,Goalpara,26.17,90.62,284368,5,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Goalpara),Goalpara,465,2,38286,0.1346
+AS-HAI,Hailakandi,24.68,92.57,256019,3,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Hailakandi),Hailakandi,186,5,6444,0.0252
+AS-MOR,Morigaon,26.2522,92.3422,196821,5,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Morigaon),Morigaon,420,6,32559,0.1654
+AS-LAK,Lakhimpur,27.2414,94.1056,181029,2,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikidata (North Lakhimpur),North Lakhimpur,379,7,1268,0.007
+AS-SOUSAL,South Salmara,25.68,89.98,178954,1,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikidata (Hatsingimari),Hatsingimari,94,,474,0.0026
+AS-HOJ,Hojai,26.0028,92.8528,154480,5,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikidata (Hojai),Hojai,133,9,56952,0.3687
+AS-DHE,Dhemaji,27.48,94.58,115938,1,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Dhemaji),Dhemaji,308,2,483,0.0042
+AS-KOK,Kokrajhar,26.4,90.27,97442,5,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Kokrajhar),Kokrajhar,442,2,20696,0.2124
+AS-SON,Sonitpur,26.6283,92.7997,96167,1,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Tezpur),Tezpur,272,2,622,0.0065
+AS-UDA,Udalguri,26.7452,92.0962,80121,4,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikidata (Udalguri),Udalguri,323,6,6850,0.0855
+AS-BIS,Biswanath,26.7278,93.1517,77063,2,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Biswanath Chariali),Biswanath Chariali,224,2,637,0.0083
+AS-BAK,Baksa,26.662,91.3411,76625,3,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikidata (Mushalpur),Mushalpur,161,,2941,0.0384
+AS-KAMMET,Kamrup Metro,26.1722,91.7458,47532,3,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Guwahati),Guwahati,86,7,935,0.0197
+AS-KARANGWES,Karbi Anglong West,25.9233,92.6083,43432,1,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Hamren),Hamren,37,,275,0.0063
+AS-GOL,Golaghat,26.52,93.97,27952,1,pop/villages/deaths/camps: Assam Flood Memorandum 2022 tables 2.5-2.7; coords: Wikipedia (Golaghat),Golaghat,56,2,0,0.0
