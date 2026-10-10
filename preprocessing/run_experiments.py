@@ -231,6 +231,8 @@ def main():
     # default instance for the live run
     clusters = prepare_clusters(dflt, seed=CONFIG["seed"])
     json.dump(default_instance_file(dflt, dflt_r, clusters), open("data/instance_default.json", "w"))
+    from preprocessing.build_live_lns import main as build_live_lns   # LNS angles for the live run
+    build_live_lns()
     json.dump({"instance": "default", "p": 1, "warm": True,
                "clusters": [{"nodes": c["nodes"], **c["params"]} for c in dflt_r["clusters"]]},
               open("data/params.json", "w"), indent=1)

@@ -1,12 +1,15 @@
-"""Entry point used by the Qollab Run button (called from main.js).
+"""Entry point used by the Qollab Run button (called from main.py).
 
-Default run (fast, no optimisation in the browser):
-  1. load data/instance_default.json (candidates, conflicts, clusters, tuned QAOA angles)
-  2. build one warm-start QAOA circuit per cluster
-  3. sample with at most ONE backend job. IonQ accepts one circuit per job, so there the
-     clusters are packed side by side into one circuit; local simulators get the list.
-  4. keep each cluster's best feasible sample, stitch, repair conflicts
-  5. run greedy and simulated annealing live; compare with the precomputed exact optimum
+Default run (fast, no optimisation in the browser), conditioned large-neighbourhood search:
+  1. load data/instance_default.json (candidates, conflicts, precomputed LNS angles)
+  2. incumbent = greedy schedule; build neighbourhoods (<= 12 qubits) around it, each
+     conditioned on the rest of the schedule, so no conflict outside can be violated
+  3. one warm-start QAOA circuit per neighbourhood, sampled with at most ONE backend job
+     (IonQ: one circuit per job, so neighbourhoods are packed onto disjoint qubits within
+     IONQ_QUBIT_BUDGET; local simulators get the list)
+  4. apply each neighbourhood's best compatible sample if it raises the schedule value
+  5. optional classical LNS sweeps (exact sub-solver), labelled as classical
+  6. greedy and simulated annealing live; compare with the precomputed exact optimum
 """
 
 from __future__ import annotations
@@ -16,18 +19,20 @@ import time
 
 import numpy as np
 
-from .baselines import exact_bruteforce, greedy, simulated_annealing
+from .baselines import adjacency, exact_bruteforce, greedy, simulated_annealing
+from .config import CONFIG
 from .data_load import load_default_instance
 from .formulate import is_feasible
-from .hybrid import assemble, cluster_circuit
-from .metrics import approx_ratio, feasible_mask, sample_stats
-from .qaoa import counts_to_samples, sample_clusters
-from .config import CONFIG
+from .lns import SOLVERS, apply_move, best_compatible, local_problem, release_neighbourhoods, run_lns
+from .metrics import approx_ratio, feasible_mask
+from .qaoa import counts_to_samples, qaoa_circuit, sample_clusters, scaled_cluster_qubo, warm_thetas
 
 E1_JSON = "results/e1.json"
+E_LNS_JSON = "results/e_lns.json"
 
-VERDICT = ("Honest verdict: at this size, classical methods find schedules at least as good "
-           "as the hybrid. The quantum part is measured fairly; it is not an advantage.")
+VERDICT = ("Honest verdict: no quantum advantage. Conditioned LNS makes the hybrid beat greedy, "
+           "but at 12 qubits an exact or SA sub-solver does just as well, and full-problem SA is "
+           "still best. QAOA's measurable contribution is sampling efficiency, not final quality.")
 
 
 def _backend_name(backend) -> str:
@@ -46,36 +51,63 @@ def _line(char="-", n=72):
     print(char * n)
 
 
-def hybrid_label(bname: str, info: dict, n_clusters: int, sizes: list[int]) -> str:
+def hybrid_label(bname: str, info: dict, n_units: int, unit: str = "neighbourhood") -> str:
     """Results-row label that states where sampling actually happened."""
+    pl = lambda k: f"{k} {unit}" + ("" if k == 1 else "s")  # noqa: E731
     if info["mode"] == "none":
-        return "Hybrid QAOA (sampled locally - no backend)"
+        return "Hybrid LNS: QAOA sampled locally - no backend"
     if info["error"]:
         who = "IonQ" if info["mode"] == "packed" else bname
-        return f"Hybrid QAOA (sampled locally - {who} job failed)"
+        return f"Hybrid LNS: QAOA sampled locally - {who} job failed"
     r, l = info["remote"], info["local"]
     if info["mode"] == "packed":
-        cl = lambda k: f"{k} cluster" + ("" if k == 1 else "s")  # noqa: E731
-        lab = f"IonQ: {cl(len(r))} / {info['remote_qubits']} qubits"
-        return f"Hybrid QAOA ({lab}; local: {cl(len(l))})" if l else f"Hybrid QAOA ({lab})"
-    return f"Hybrid QAOA ({bname}: all {n_clusters} clusters)"
+        lab = f"IonQ: {pl(len(r))} / {info['remote_qubits']} qubits"
+        return f"Hybrid LNS: QAOA ({lab}; local: {pl(len(l))})" if l else f"Hybrid LNS: QAOA ({lab})"
+    return f"Hybrid LNS: QAOA ({bname}: all {pl(n_units)})"
 
 
-def gap_insight(path: str = E1_JSON, tol: float = 0.005) -> str:
-    """Hybrid vs 'same split, exact per cluster' on the 21 precomputed instances."""
-    e1 = json.load(open(path, encoding="utf-8"))
+def gap_insight(e1_path: str = E1_JSON, lns_path: str = E_LNS_JSON) -> str:
+    """What the precomputed 21-instance results say, computed from the result files."""
+    e1 = json.load(open(e1_path, encoding="utf-8"))
     bench = [r for r in e1["instances"] if r["instance"] != "default"]
-    h = [r["methods"]["hybrid_warm_p1"]["ratio"] for r in bench]
-    c = [r["methods"]["decomp_exact"]["ratio"] for r in bench]
-    same = sum(abs(a - b) <= 1e-9 for a, b in zip(h, c))
-    line = (f"Precomputed, {len(bench)} instances: hybrid QAOA mean ratio {np.mean(h):.3f} vs same split, "
-            f"exact per cluster {np.mean(c):.3f} (identical on {same} of {len(bench)}).")
-    if abs(np.mean(h) - np.mean(c)) <= tol:
-        line += ("\n  Hybrid QAOA matches the exact answer within each cluster; the gap to the global "
-                 "optimum comes from splitting the problem, not from QAOA.")
-    else:
-        line += f"\n  QAOA loses {np.mean(c) - np.mean(h):.3f} on top of the decomposition."
-    return line
+    v1 = np.mean([r["methods"]["hybrid_warm_p1"]["ratio"] for r in bench])
+    sa = np.mean([r["methods"]["sa"]["ratio"] for r in bench])
+    a = json.load(open(lns_path, encoding="utf-8"))["part_a"]
+    b = json.load(open(lns_path, encoding="utf-8"))["part_b"]
+    g, q, ex = a["greedy"]["final"][0], a["qaoa_q12"]["final"][0], a["exact_q12"]["final"][0]
+    lines = [f"Precomputed, {len(bench)} instances (ratio to exact optimum): greedy {g:.3f}; v1 hybrid "
+             f"(independent clusters + repair) {v1:.3f}; hybrid LNS + QAOA {q:.3f}; full-problem SA {sa:.3f}."]
+    if abs(q - ex) < 5e-4:
+        lines.append(f"  LNS + exact sub-solver gives {ex:.3f} too: at 12 qubits the sub-solver is not the "
+                     "limit; the neighbourhood structure is.")
+    if "exact_q16" in a and a["exact_q16"]["final"][0] > ex + 5e-4:
+        lines.append(f"  16-qubit neighbourhoods (classical sub-solvers) reach {a['exact_q16']['final'][0]:.3f}: "
+                     "more qubits per neighbourhood gives better schedules.")
+    qb, rb = a.get("qaoa_q12_b32"), a.get("random_q12_b32")
+    if qb and rb:
+        lines.append(f"  With only 32 shots per neighbourhood: QAOA {qb['final'][0]:.3f} vs uniform random "
+                     f"sampling {rb['final'][0]:.3f}. QAOA puts x{b['qaoa_over_random']['median_ratio']:.0f} "
+                     f"(median) more probability on each subproblem's optimum than uniform "
+                     f"({b['qaoa_over_random']['qaoa_higher']}/{b['qaoa_over_random']['n']}); "
+                     f"an SA restart still finds it more often ({b['p_sa']['mean']:.2f} vs "
+                     f"{b['p_qaoa']['mean']:.2f} per sample) but costs 100 sweeps.")
+    return "\n".join(lines)
+
+
+def _neighbourhood_params(inst, hoods, adj):
+    """Precomputed angles if the live neighbourhoods match the offline ones, else a fallback."""
+    pre = inst.get("lns", {}).get("neighbourhoods", [])
+    by_key = {tuple(h["free"]): h for h in pre}
+    if pre and all(tuple(f) in by_key for f in hoods):
+        return [by_key[tuple(f)] for f in hoods], True
+    g = float(np.median([h["gammas"][0] for h in pre])) if pre else 0.5
+    b = float(np.median([h["betas"][0] for h in pre])) if pre else 0.3
+    inc = inst.get("lns", {}).get("incumbent", [])
+    out = []
+    for f in hoods:   # warm start from the incumbent: selected -> 0.75, others -> 0.25 (after clipping)
+        c = np.array([1.0 if inc and inc[v] else 0.0 for v in f])
+        out.append({"free": f, "gammas": [g], "betas": [b], "thetas": list(warm_thetas(c, CONFIG["eps"]))})
+    return out, False
 
 
 def run_default(backend=None, shots: int = 1024, seed: int = 7) -> str:
@@ -89,102 +121,113 @@ def run_default(backend=None, shots: int = 1024, seed: int = 7) -> str:
     w, edges = inst["w"], inst["edges"]
     n = len(w)
     opt = float(inst["exact"]["value"])
-    clusters = inst["clusters"]
-    qidx = [k for k, cl in enumerate(clusters) if len(cl["nodes"]) > 1]
-    sizes_all = [len(cl["nodes"]) for cl in clusters]
+    adj = adjacency(n, edges)
     print(f"Instance: {inst['description']}")
-    print(f"  {n} candidate images, {len(edges)} conflicts, {len(clusters)} clusters "
-          f"(sizes {sizes_all}; largest {max(sizes_all)} qubits)")
+    print(f"  {n} candidate images, {len(edges)} conflicts")
     print(f"Backend: {bname}   shots: {shots}")
 
-    # ---- quantum: at most one job -------------------------------------------------------
+    # ---- incumbent and neighbourhoods -----------------------------------------------------
     _line()
-    print("[1/3] Final QAOA sampling (precomputed warm-start angles, p=1), at most one job")
+    print("[1/4] Incumbent and neighbourhoods (classical)")
+    t = time.perf_counter(); xg = greedy(w, edges); t_g = time.perf_counter() - t
+    hoods = release_neighbourhoods(xg, adj, CONFIG["lns_max_free"], CONFIG["lns_seed"])
+    params, matched = _neighbourhood_params(inst, hoods, adj)
+    print(f"  greedy schedule: {int(xg.sum())} images, ratio {approx_ratio(np.dot(xg, w), opt):.3f}")
+    print(f"  {len(hoods)} neighbourhoods around it (sizes {[len(f) for f in hoods]}, <= {CONFIG['lns_max_free']} "
+          f"qubits), each conditioned on the rest of the schedule")
+    if not matched:
+        print("  (neighbourhoods differ from the precomputed ones: using median angles - expect weaker samples)")
+
+    # ---- quantum: at most one job -------------------------------------------------------------
+    _line()
+    print("[2/4] QAOA sampling of every neighbourhood (precomputed warm-start angles, p=1), at most one job")
     t = time.perf_counter()
-    circuits = [cluster_circuit(clusters[k], clusters[k]["params"]) for k in qidx]
-    counts, info = sample_clusters(backend, circuits, shots, seed, CONFIG["ionq_qubit_budget"])
+    circuits, locals_ = [], []
+    for f, prm in zip(hoods, params):
+        wl, el = local_problem(f, w, adj)
+        ws, P = scaled_cluster_qubo(wl, CONFIG["penalty_mult"])
+        circuits.append(qaoa_circuit(ws, el, P, prm["gammas"], prm["betas"], thetas=prm["thetas"]))
+        locals_.append((wl, el))
+    counts, info = sample_clusters(backend, circuits, shots, seed, CONFIG["ionq_qubit_budget"],
+                                   unit="neighbourhood")
     qsizes = [c.num_qubits for c in circuits]
-    cid = lambda j: qidx[j] + 1  # noqa: E731  (1-based cluster ids, as printed)
     if info["mode"] == "packed" and not info["error"]:
         k = len(info["remote"])
-        print(f"  IonQ (one circuit per job): {k} cluster{'' if k == 1 else 's'} in ONE "
+        print(f"  IonQ (one circuit per job): {k} neighbourhood{'' if k == 1 else 's'} in ONE "
               f"{info['remote_qubits']}-qubit circuit (budget {info['budget']} qubits = min(backend size, "
               f"IONQ_QUBIT_BUDGET)), ONE job")
     elif info["mode"] == "list" and not info["error"]:
-        print(f"  one job on {bname} with {len(circuits)} circuits (one per cluster)")
+        print(f"  one job on {bname} with {len(circuits)} circuits (one per neighbourhood)")
     if info["error"]:
         print(f"  backend job FAILED ({info['error']}); nothing else was sent to the backend")
     if info["remote"]:
-        print("  sampled on backend: " + ", ".join(f"cluster {cid(j)} ({qsizes[j]}q)" for j in sorted(info["remote"])))
+        print("  sampled on backend: " + ", ".join(f"N{j + 1} ({qsizes[j]}q)" for j in sorted(info["remote"])))
     if info["local"]:
-        print("  sampled locally:    " + ", ".join(f"cluster {cid(j)} ({qsizes[j]}q)" for j in sorted(info["local"])))
-    samples, qi = [], 0
-    for cl in clusters:
-        if len(cl["nodes"]) == 1:
-            samples.append(np.ones((shots, 1), dtype=np.int8))   # isolated candidate: take it
-        else:
-            samples.append(counts_to_samples(counts[qi], len(cl["nodes"])))
-            qi += 1
-    res = assemble(inst, clusters, samples)
-    t_q = time.perf_counter() - t
-    drops = [a for a in res["repair_log"] if a["action"] == "drop"]
-    adds = [a for a in res["repair_log"] if a["action"] == "add"]
-    print(f"  clusters with at least one feasible sample: {res['clusters_with_feasible']} of {len(clusters)} "
-          f"(best feasible sample kept per cluster)")
-    print(f"  cut conflicts (between clusters, from the partition): {res['cut_conflicts']} of {len(edges)}")
-    print(f"  stitched schedule feasible before repair: {res['raw_feasible']}; repair: dropped {len(drops)}, "
-          f"added {len(adds)} (net {len(adds) - len(drops):+d} images)")
-    for a in res["repair_log"]:
-        c = inst["candidates"][a["candidate"]]
-        print(f"    {a['action']:>4}: {c['target_id']} by {c['satellite']} at +{c['t_hours']:.1f} h")
-    cl_stats = []
-    for cl, X in zip(clusters, samples):
-        if 1 < len(cl["nodes"]) <= 16:   # brute force: NumPy only, no SciPy load in the browser
-            copt = float(np.dot(exact_bruteforce(cl["w"], cl["edges"]), cl["w"]))
-            cl_stats.append(sample_stats(X, cl["w"], cl["edges"], copt))
+        print("  sampled locally:    " + ", ".join(f"N{j + 1} ({qsizes[j]}q)" for j in sorted(info["local"])))
 
-    # ---- classical baselines live --------------------------------------------------------
+    x = xg.copy()
+    hits, moves = 0, []
+    for j, (f, (wl, el), c) in enumerate(zip(hoods, locals_, counts)):
+        X = counts_to_samples(c, len(f))
+        sub_opt = float(np.dot(exact_bruteforce(wl, el), wl))
+        vals = np.where(feasible_mask(X, el), X @ np.asarray(wl), -1.0)
+        hits += int(vals.max() >= sub_opt - 1e-12)
+        new = best_compatible(f, f, X, x, w, adj)
+        if new is not None and apply_move(x, f, new, w):
+            moves.append((j, "backend" if j in info["remote"] else "local"))
+    x_q = x.copy()
+    t_q = time.perf_counter() - t
+    print(f"  neighbourhoods whose samples contain their optimum: {hits} of {len(hoods)}")
+    print(f"  improving moves applied: {len(moves)}" +
+          (" (" + ", ".join(f"N{j + 1} from {src} samples" for j, src in moves) + ")" if moves else ""))
+    print(f"  schedule after the QAOA-sampled sweep: ratio {approx_ratio(np.dot(x_q, w), opt):.3f} "
+          f"(greedy {approx_ratio(np.dot(xg, w), opt):.3f})")
+
+    # ---- classical refinement ---------------------------------------------------------------
     _line()
-    print("[2/3] Classical baselines (live)")
-    t = time.perf_counter(); xg = greedy(w, edges); t_g = time.perf_counter() - t
+    k_cl = CONFIG["lns_classical_sweeps"]
+    print(f"[3/4] Classical refinement: {k_cl} more LNS sweeps with an exact sub-solver (classical, labelled)")
+    t = time.perf_counter()
+    rc = run_lns(w, edges, "release", x_q, SOLVERS["exact"], sweeps=k_cl, budget=1, seed=seed + 1000,
+                 max_free=CONFIG["lns_max_free"])
+    x_c = rc["x"]
+    t_c = time.perf_counter() - t
+    print(f"  {rc['moves']} further improving moves; ratio {approx_ratio(np.dot(x_c, w), opt):.3f}")
+
+    # ---- classical baselines ------------------------------------------------------------------
     t = time.perf_counter()
     Xs = simulated_annealing(w, edges, restarts=shots, seed=seed, sweeps=100)
     vals = Xs @ np.asarray(w)
     vals[~feasible_mask(Xs, edges)] = -1
     xs = Xs[int(np.argmax(vals))]
     t_s = time.perf_counter() - t
-    print(f"  greedy {t_g:.2f} s; simulated annealing {shots} restarts x 100 sweeps {t_s:.2f} s")
     x_exact = np.asarray(inst["exact"]["x"], dtype=np.int8)
 
-    # ---- results -------------------------------------------------------------------------
+    # ---- results ---------------------------------------------------------------------------
     _line()
-    print("[3/3] Results (value = priority x people x urgency x image quality; 1.000 = exact optimum)")
-    hlabel = hybrid_label(bname, info, len(circuits), qsizes)
+    print("[4/4] Results (value = priority x people x urgency x image quality; 1.000 = exact optimum)")
+    hlabel = hybrid_label(bname, info, len(circuits))
     rows = [("exact", "Exact optimum (MILP, precomputed)", x_exact, None),
             ("greedy", "Greedy (value density)", xg, t_g),
             ("sa", f"Simulated annealing ({shots} restarts)", xs, t_s),
-            ("hybrid", hlabel, res["x"], t_q)]
+            ("hybrid_quantum_sweep", hlabel, x_q, t_q),
+            ("hybrid", f"  + {k_cl} classical LNS sweeps (exact sub-solver)", x_c, t_c)]
     width = max(46, max(len(r[1]) for r in rows) + 2)
     print(f"  {'method':<{width}}{'ratio':>7}{'images':>8}{'feasible':>10}{'time s':>8}")
     out_methods = {}
-    for key, name, x, rt in rows:
-        val = float(np.dot(x, w))
-        print(f"  {name:<{width}}{approx_ratio(val, opt):>7.3f}{int(np.sum(x)):>8d}"
-              f"{str(is_feasible(x, edges)):>10}{('-' if rt is None else f'{rt:.2f}'):>8}")
-        out_methods[key] = {"label": name, "ratio": approx_ratio(val, opt), "x": [int(v) for v in x],
+    for key, name, xx, rt in rows:
+        val = float(np.dot(xx, w))
+        print(f"  {name:<{width}}{approx_ratio(val, opt):>7.3f}{int(np.sum(xx)):>8d}"
+              f"{str(is_feasible(xx, edges)):>10}{('-' if rt is None else f'{rt:.2f}'):>8}")
+        out_methods[key] = {"label": name, "ratio": approx_ratio(val, opt), "x": [int(v) for v in xx],
                             "runtime_s": rt}
-    if cl_stats:
-        fr = np.mean([s["feasible_rate"] for s in cl_stats])
-        ng = np.mean([s["n_good"] for s in cl_stats])
-        print(f"  per-cluster QAOA samples: mean feasible rate {fr:.2f}, "
-              f"mean distinct near-optimal (>=95%) schedules {ng:.1f}")
     _line()
     try:
-        print("Where the gap comes from: " + gap_insight())
+        print("What the benchmarks say: " + gap_insight())
     except Exception as e:
-        print(f"(decomposition insight unavailable: {type(e).__name__})")
+        print(f"(benchmark insight unavailable: {type(e).__name__})")
     if info["panel"]:
-        print(f"Probabilities panel: shows {info['panel']}. All clusters are summarised above.")
+        print(f"Probabilities panel: shows {info['panel']}. All neighbourhoods are summarised above.")
     else:
         print("Probabilities panel: no circuit ran on a backend in this run (all sampled locally).")
     _line()
@@ -192,8 +235,9 @@ def run_default(backend=None, shots: int = 1024, seed: int = 7) -> str:
     print(f"Total runtime: {time.perf_counter() - t_all:.1f} s")
     _line("=")
     return json.dumps({"backend": bname, "shots": shots, "sampling": info, "hybrid_label": hlabel,
-                       "methods": out_methods, "repair_log": res["repair_log"],
-                       "raw_feasible": res["raw_feasible"], "cluster_stats": cl_stats,
+                       "methods": out_methods, "neighbourhoods": [len(f) for f in hoods],
+                       "precomputed_angles": matched, "subproblem_hits": hits,
+                       "moves": [{"neighbourhood": j + 1, "source": src} for j, src in moves],
                        "runtime_s": time.perf_counter() - t_all})
 
 

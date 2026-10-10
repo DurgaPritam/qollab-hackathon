@@ -43,7 +43,8 @@ def test_default_run_end_to_end_local_simulator():
     r = json.loads(run_default(be, shots=256))
     assert be.jobs == 1
     assert r["sampling"]["mode"] == "list" and not r["sampling"]["local"]
-    assert "counting_basic_simulator: all" in r["hybrid_label"]
+    assert "counting_basic_simulator: all" in r["hybrid_label"] and r["precomputed_angles"]
+    assert r["methods"]["hybrid"]["ratio"] >= r["methods"]["hybrid_quantum_sweep"]["ratio"] >= r["methods"]["greedy"]["ratio"]
     # largest cluster submitted last (the Probabilities panel shows the last circuit)
     sizes = [c.num_qubits for c in be.sent[0]]
     assert sizes[-1] == max(sizes)
@@ -54,16 +55,17 @@ def test_default_run_end_to_end_local_simulator():
 
 
 @needs_default
-def test_ionq_default_budget_sends_largest_cluster_only():
+def test_ionq_default_budget_sends_largest_neighbourhood_only():
     from fsq.api import run_default
-    be = FakeIonQ(num_qubits=25)          # default IONQ_QUBIT_BUDGET = 12 -> cluster 1 alone
+    be = FakeIonQ(num_qubits=25)          # default IONQ_QUBIT_BUDGET = 12 -> the 12-qubit neighbourhood alone
     r = json.loads(run_default(be, shots=128))
     s = r["sampling"]
     assert be.jobs == 1 and not isinstance(be.sent[0], list)
-    assert s["mode"] == "packed" and s["error"] is None
-    assert s["remote"] == [0] and s["remote_qubits"] == 12
-    assert be.sent[0].num_qubits == 12 and be.sent[0].num_clbits == 12
-    assert r["hybrid_label"] == "Hybrid QAOA (IonQ: 1 cluster / 12 qubits; local: 7 clusters)"
+    assert s["mode"] == "packed" and s["error"] is None and s["remote_qubits"] <= 12
+    assert be.sent[0].num_qubits == s["remote_qubits"] and be.sent[0].num_clbits == s["remote_qubits"]
+    k, rest = len(s["remote"]), len(s["local"])
+    assert r["hybrid_label"].startswith(f"Hybrid LNS: QAOA (IonQ: {k} neighbourhood")
+    assert f"local: {rest} neighbourhood" in r["hybrid_label"]
 
 
 @needs_default
@@ -122,7 +124,7 @@ def test_ionq_failure_is_labelled_local():
     be = Broken()
     r = json.loads(run_default(be, shots=64))
     assert be.jobs == 1
-    assert r["hybrid_label"] == "Hybrid QAOA (sampled locally - IonQ job failed)"
+    assert r["hybrid_label"] == "Hybrid LNS: QAOA sampled locally - IonQ job failed"
     assert "ionq" not in r["hybrid_label"].lower().replace("ionq job failed", "")
 
 
@@ -178,4 +180,4 @@ def test_main_py_entry_point(capsys):
     main.main(shots=128, charts=False)
     out = capsys.readouterr().out
     assert "Honest verdict" in out and "Total runtime" in out
-    assert "Where the gap comes from" in out and "Probabilities panel" in out
+    assert "What the benchmarks say" in out and "Probabilities panel" in out

@@ -24,6 +24,7 @@ DATA_FILES = (
     "results/e1.json",
     "results/e_div.json",
     "results/e_conn.json",
+    "results/e_lns.json",
 )
 
 
@@ -40,7 +41,7 @@ def main(shots: int = 1024, charts: bool = True):
         inst = load_default_instance()
         print("\nFigures (the first uses this run's schedule; the rest are precomputed offline results):")
         plots.schedule_map(inst, load_targets(), out["methods"]["hybrid"]["x"],
-                           f"This run's hybrid schedule: top 10 districts, first 24 h ({out['backend']})")
+                           f"This run's hybrid LNS schedule (QAOA sweep + classical refinement): top 10 districts, 24 h ({out['backend']})")
         plt.show()
         plots.connectivity_chart(1)
         plt.show()

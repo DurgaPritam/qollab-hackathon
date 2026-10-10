@@ -348,7 +348,8 @@ def _counts_from_result(res, pos: int, n_circuits: int) -> dict:
         return dict(allc[pos] if isinstance(allc, list) else allc)
 
 
-def sample_clusters(backend, circuits: list, shots: int, seed: int, ionq_budget: int = 12) -> tuple[list[dict], dict]:
+def sample_clusters(backend, circuits: list, shots: int, seed: int, ionq_budget: int = 12,
+                    unit: str = "cluster") -> tuple[list[dict], dict]:
     """Final sampling with at most ONE backend job, and an exact record of where each
     cluster was sampled.
 
@@ -392,7 +393,7 @@ def sample_clusters(backend, circuits: list, shots: int, seed: int, ionq_budget:
                 counts[k] = marginal_counts(joint, o, sizes[k])
             info.update(remote=packed, remote_qubits=sum(sizes[k] for k in packed),
                         panel=f"the single packed circuit ({sum(sizes[k] for k in packed)} qubits, "
-                              f"cluster{'' if len(packed) == 1 else 's'} {', '.join(str(k + 1) for k in sorted(packed))})")
+                              f"{unit}{'' if len(packed) == 1 else 's'} {', '.join(str(k + 1) for k in sorted(packed))})")
         except Exception as e:  # never send a second job
             info["error"] = f"{type(e).__name__}: {str(e)[:160]}"
     else:
@@ -405,7 +406,7 @@ def sample_clusters(backend, circuits: list, shots: int, seed: int, ionq_budget:
                 counts[k] = _counts_from_result(res, pos, n)
             last = order[-1]
             info.update(remote=list(range(n)), remote_qubits=sum(sizes),
-                        panel=f"the last circuit in the job: cluster {last + 1} ({sizes[last]} qubits, the largest)")
+                        panel=f"the last circuit in the job: {unit} {last + 1} ({sizes[last]} qubits, the largest)")
         except Exception as e:
             info["error"] = f"{type(e).__name__}: {str(e)[:160]}"
     if info["error"]:

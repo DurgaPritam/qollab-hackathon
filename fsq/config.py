@@ -23,4 +23,9 @@ CONFIG = {
     # same run, so the default is the safe one. Raise to 21 (clusters 1+2) once that is verified.
     "ionq_qubit_budget": 12,
     "seed": 7,
+    # Conditioned LNS (live run): neighbourhoods of at most lns_max_free qubits, built
+    # around the greedy schedule with lns_seed; then lns_classical_sweeps classical sweeps.
+    "lns_max_free": 12,
+    "lns_seed": 7,
+    "lns_classical_sweeps": 5,
 }
