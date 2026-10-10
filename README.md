@@ -10,7 +10,7 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 > 1. Open the project in **Chrome or Edge** (Brave, Opera and Firefox 153+ also work). **Safari cannot run Qollab projects.**
 > 2. Click **Run Project**. In *Select QPU*, choose one of:
 >    - **Built-in simulator (24q):** about **23 s** on the first run (Qollab loads its packages) and about **9 s** after; our Python code itself takes 1–3 s.
->    - **IonQ Aria 1 (25q):** a remote noise-model simulator that may queue. IonQ accepts **one circuit per job**. By default the run sends the **largest cluster (12 qubits)** to IonQ as that one circuit and samples the other 7 clusters locally; the console lists which ran where. See *IonQ qubit budget* below.
+>    - **IonQ Aria 1 (25q):** a remote noise-model simulator that may queue. IonQ accepts **one circuit per job**. By default the run sends the **largest cluster (12 qubits)** to IonQ as that one circuit and samples the other 7 clusters locally; the console lists which ran where. See *IonQ qubit budget* below. Verified on Qollab (Oct 10, 2026): the 12-qubit circuit ran on IonQ Aria 1 in one job, and the whole run took about 14 s, mostly the remote IonQ job.
 >
 >    *Run settings* offers `shots` (default 1024) and `charts` (default on).
 > 3. What the run does (the default scenario: top 10 districts over the first 24 h, 68 candidate images, 8 QAOA clusters of 5–12 qubits):
