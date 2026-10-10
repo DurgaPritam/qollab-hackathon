@@ -258,44 +258,141 @@ def local_counts(circuit, shots: int, seed: int) -> dict:
     return dict(sv.sample_counts(shots))
 
 
-def run_one_job(backend, circuits: list, shots: int, seed: int,
-                mode: str = "list") -> tuple[list[dict], list[str], str]:
-    """Final sampling with exactly one backend job.
-
-    mode="list": all cluster circuits go to the backend in a single `backend.run` call.
-    mode="largest": only the largest cluster goes to the backend (one job); the rest are
-    sampled locally. If the backend call fails, nothing else is sent to the backend
-    (IonQ allows one job per run): every cluster is sampled locally and labelled so.
-
-    Returns (counts per circuit, where each was sampled, a human-readable note).
-    """
-    tcircs = _transpile_portable(circuits)
-    where = ["local"] * len(circuits)
-    counts: list = [None] * len(circuits)
-    note = ""
-    if backend is not None and circuits:
-        idx = list(range(len(circuits))) if mode == "list" else [
-            max(range(len(circuits)), key=lambda k: circuits[k].num_qubits)]
+def is_ionq(backend) -> bool:
+    """True for IonQ backends (name or provider class mentions IonQ)."""
+    if backend is None:
+        return False
+    names = [type(backend).__name__, type(backend).__module__]
+    for attr in ("name", "backend_name"):
         try:
-            batch = [tcircs[k] for k in idx]
-            job = backend.run(batch if len(batch) > 1 else batch[0], shots=shots)
-            res = job.result()
-            for pos, k in enumerate(idx):
-                try:
-                    c = res.get_counts(pos)
-                except Exception:
-                    allc = res.get_counts()
-                    c = allc[pos] if isinstance(allc, list) else allc
-                counts[k] = dict(c)
-                where[k] = "backend"
-            note = (f"one job sent to backend with {len(idx)} circuit(s)"
-                    + ("" if len(idx) == len(circuits) else
-                       f"; {len(circuits) - len(idx)} smaller cluster(s) sampled locally"))
-        except Exception as e:  # never send a second job; fall back locally, clearly labelled
-            note = f"backend job failed ({type(e).__name__}: {e}); all clusters sampled locally"
+            v = getattr(backend, attr)
+            names.append(str(v() if callable(v) else v))
+        except Exception:
+            pass
+    return any("ionq" in n.lower() for n in names)
+
+
+def qubit_budget(backend, default: int) -> int:
+    """backend.num_qubits when the backend reports it, else `default`."""
+    try:
+        n = getattr(backend, "num_qubits", None)
+        n = n() if callable(n) else n
+        if n:
+            return int(n)
+    except Exception:
+        pass
+    return int(default)
+
+
+def pack_clusters(sizes: list[int], budget: int) -> tuple[list[int], list[int]]:
+    """Greedy bin-pack into one circuit: largest clusters first, add each one that still fits.
+
+    Returns (packed cluster indices, their qubit offsets). Clusters not packed are sampled
+    locally.
+    """
+    order = sorted(range(len(sizes)), key=lambda k: (-sizes[k], k))
+    packed, offsets, used = [], [], 0
+    for k in order:
+        if used + sizes[k] <= budget:
+            packed.append(k)
+            offsets.append(used)
+            used += sizes[k]
+    return packed, offsets
+
+
+def combine_circuits(circuits: list, offsets: list[int]):
+    """Place unmeasured cluster circuits side by side on disjoint qubits, then measure all.
+
+    Cluster j occupies qubits offsets[j] .. offsets[j] + n_j - 1, so in Qiskit's
+    little-endian bitstrings its bits are the slice counted from the right.
+    """
+    from qiskit import QuantumCircuit
+
+    total = max((o + c.num_qubits for c, o in zip(circuits, offsets)), default=0)
+    qc = QuantumCircuit(total)
+    for c, o in zip(circuits, offsets):
+        qc.compose(c.remove_final_measurements(inplace=False), qubits=list(range(o, o + c.num_qubits)),
+                   inplace=True)
+    qc.measure_all()
+    return qc
+
+
+def marginal_counts(counts: dict, offset: int, n: int) -> dict:
+    """Counts of the n qubits starting at `offset`, from counts over a wider register.
+
+    Keys use Qiskit's order: qubit 0 is the rightmost character. Hex keys ("0x..") are
+    accepted. Output keys are n-character bitstrings in the same order.
+    """
+    out: dict[str, int] = {}
+    mask = (1 << n) - 1
+    for key, c in counts.items():
+        k = str(key).replace(" ", "")
+        val = int(k, 16) if k.startswith("0x") else int(k, 2)
+        sub = format((val >> offset) & mask, f"0{n}b")
+        out[sub] = out.get(sub, 0) + int(c)
+    return out
+
+
+def _counts_from_result(res, pos: int, n_circuits: int) -> dict:
+    try:
+        return dict(res.get_counts(pos))
+    except Exception:
+        allc = res.get_counts()
+        return dict(allc[pos] if isinstance(allc, list) else allc)
+
+
+def sample_clusters(backend, circuits: list, shots: int, seed: int, ionq_budget: int = 25) -> tuple[list[dict], dict]:
+    """Final sampling with at most ONE backend job, and an exact record of where each
+    cluster was sampled.
+
+    * IonQ (one circuit per job): bin-pack clusters into one combined circuit on disjoint
+      qubits (budget = backend.num_qubits, else `ionq_budget`); the rest run locally.
+    * Other backends (local simulators): one job with the list of circuits, largest cluster
+      submitted last (Qollab's Probabilities panel shows the last circuit). No packing: a
+      ~24-qubit statevector is too heavy for the browser.
+    * Any backend error: nothing else is sent; every cluster is sampled locally.
+
+    Returns (counts per cluster, info). info["remote"] lists clusters sampled on the backend.
+    """
+    n = len(circuits)
+    sizes = [c.num_qubits for c in circuits]
+    counts: list = [None] * n
+    info = {"mode": "local", "remote": [], "local": list(range(n)), "remote_qubits": 0,
+            "error": None, "panel": None, "budget": None}
+    if backend is None or n == 0:
+        info["mode"] = "none"
+    elif is_ionq(backend):
+        budget = qubit_budget(backend, ionq_budget)
+        packed, offsets = pack_clusters(sizes, budget)
+        info.update(mode="packed", budget=budget)
+        try:
+            combined = _transpile_portable(combine_circuits([circuits[k] for k in packed], offsets))
+            res = backend.run(combined, shots=shots).result()
+            joint = _counts_from_result(res, 0, 1)
+            for k, o in zip(packed, offsets):
+                counts[k] = marginal_counts(joint, o, sizes[k])
+            info.update(remote=packed, remote_qubits=sum(sizes[k] for k in packed),
+                        panel=f"the single packed circuit ({sum(sizes[k] for k in packed)} qubits, "
+                              f"clusters {', '.join(str(k + 1) for k in sorted(packed))})")
+        except Exception as e:  # never send a second job
+            info["error"] = f"{type(e).__name__}: {str(e)[:160]}"
     else:
-        note = "no backend given; all clusters sampled locally"
-    for k in range(len(circuits)):
-        if counts[k] is None:
-            counts[k] = local_counts(circuits[k], shots, seed + k)
-    return counts, where, note
+        order = sorted(range(n), key=lambda k: (sizes[k], -k))     # largest last
+        info["mode"] = "list"
+        try:
+            tc = _transpile_portable([circuits[k] for k in order])
+            res = backend.run(tc if len(tc) > 1 else tc[0], shots=shots).result()
+            for pos, k in enumerate(order):
+                counts[k] = _counts_from_result(res, pos, n)
+            last = order[-1]
+            info.update(remote=list(range(n)), remote_qubits=sum(sizes),
+                        panel=f"the last circuit in the job: cluster {last + 1} ({sizes[last]} qubits, the largest)")
+        except Exception as e:
+            info["error"] = f"{type(e).__name__}: {str(e)[:160]}"
+    if info["error"]:
+        info["remote"], info["remote_qubits"] = [], 0
+        counts = [None] * n
+    info["local"] = [k for k in range(n) if k not in info["remote"]]
+    for k in info["local"]:
+        counts[k] = local_counts(circuits[k], shots, seed + k)
+    return counts, info

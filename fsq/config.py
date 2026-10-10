@@ -17,5 +17,6 @@ CONFIG = {
     "alpha": 0.2,                 # CVaR fraction
     "p": 1,                       # QAOA depth for the default run
     "shots": 1024,
+    "ionq_qubit_budget": 25,      # IONQ_QUBIT_BUDGET: used when the backend does not report num_qubits
     "seed": 7,
 }

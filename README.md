@@ -7,17 +7,25 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 ---
 
 > ### How to run
-> 1. Open the project in a **recent Chrome, Edge, Brave or Opera, or Firefox 153+**. **Safari cannot run Qollab projects.**
-> 2. Press **Run**. In *Select QPU*, choose the **built-in simulator** (fastest) or an **IonQ simulator**. Either one gets **exactly one job**. *Run settings* offers `shots` (default 1024) and `charts` (default on).
-> 3. `main.py` runs the default scenario: the top 10 districts over the first 24 h, 68 candidate images, 9 QAOA clusters.
->    - It sends **all 9 cluster circuits to the backend in a single job**, then stitches and repairs the schedule.
->    - It runs greedy and simulated annealing live and compares every method with the exact optimum.
->    - It then draws four figures in the console: this run's schedule map, followed by the precomputed connectivity, diversity and quality charts.
-> 4. What to look for in the console:
->    - the line `one job sent to backend with 9 circuit(s)`;
->    - every repair action;
->    - the results table (ratio to optimum, 1.000 = optimal);
->    - the honest verdict line.
+> 1. Open the project in **Chrome or Edge** (Brave, Opera and Firefox 153+ also work). **Safari cannot run Qollab projects.**
+> 2. Click **Run Project**. In *Select QPU*, choose one of:
+>    - **Built-in simulator (24q):** about **23 s** on the first run (Qollab loads its packages) and about **9 s** after; our Python code itself takes 1–3 s.
+>    - **IonQ Aria 1 (25q):** a remote noise-model simulator that may queue. IonQ accepts **one circuit per job**, so the run packs as many QAOA clusters as fit into **one** circuit on disjoint qubits and submits **one** job. The other clusters are sampled locally, and the console lists which ran where.
+>
+>    *Run settings* offers `shots` (default 1024) and `charts` (default on).
+> 3. What the run does (the default scenario: top 10 districts over the first 24 h, 68 candidate images, 8 QAOA clusters of 5–12 qubits):
+>    - samples the QAOA clusters;
+>    - keeps each cluster's best feasible sample, stitches the clusters together and repairs conflicts between them;
+>    - runs greedy and simulated annealing live;
+>    - compares everything with the exact optimum;
+>    - draws four figures.
+> 4. What to look for:
+>    - **where each cluster ran** (backend or local);
+>    - **the results table**: its hybrid row names where sampling actually happened, e.g. `Hybrid QAOA (IonQ: 2 clusters / 21 qubits; local: 6 clusters)`;
+>    - **the "where the gap comes from" line**;
+>    - **the honest verdict**.
+>
+>    Qollab's **Probabilities panel shows one circuit only**. On local simulators it is the largest cluster, which is submitted last; on IonQ it is the single packed circuit. The console says which.
 
 > ### Honest verdict
 > **At this size, classical methods find schedules at least as good as the hybrid**:
@@ -25,7 +33,7 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 > - the hybrid's whole gap comes from cutting the problem into qubit-sized pieces, not from QAOA.
 >
 > What the quantum part adds, measured fairly:
-> - **a little more variety** among near-optimal plans per cluster;
+> - **slightly more variety** among near-optimal plans per cluster, though the error bars overlap (for whole schedules, SA wins on variety);
 > - **far fewer two-qubit gates** on all-to-all trapped-ion hardware than on nearest-neighbour layouts: 1.7× fewer at 24 qubits.
 >
 > We make **no quantum-advantage claim**.
@@ -106,15 +114,17 @@ We made these deliberately strong, because the comparison is only credible if th
    - Prepare each qubit with $R_Y(\theta_i)\lvert 0\rangle$, where $\theta_i = 2\arcsin\sqrt{c_i}$.
    - Use the mixer $R_Y(\theta_i)\,R_Z(-2\beta)\,R_Y(-\theta_i)$.
 3. **CVaR objective** (Barkoutsos et al., *Quantum* 4, 256, 2020), with α = 0.2. Angles are optimised with COBYLA **offline only**, on an exact statevector simulator that the tests check against Qiskit's `Statevector`.
-4. **One-job sampling.** Every cluster's circuit goes to the selected backend in **one `backend.run` call**, as IonQ allows one job per run.
-   - If the backend rejects the call, nothing more is sent; the clusters are sampled locally and the console says so.
+4. **One-job sampling.** IonQ allows **one job per run and one circuit per job**; we confirmed the second limit on Qollab, where a multi-circuit job was rejected with `IonQAPIError 400: "Only job type ionq.circuit.v1 is supported"`.
+   - **On IonQ:** clusters are independent subproblems, so we place several side by side on **disjoint qubits of one circuit**. We bin-pack largest first, up to `backend.num_qubits` (25 on Aria 1). A joint measurement of that circuit gives independent samples for each cluster. We split the counts back per cluster by marginalising over each cluster's qubit range, using Qiskit's little-endian bit order; a unit test covers this. Clusters that do not fit are sampled locally.
+   - **On local simulators:** clusters go as a list of separate circuits in one job. They are not packed, because a ~24-qubit statevector is too heavy for the browser.
+   - **If a backend job fails:** nothing more is sent. Everything is sampled locally, and the results row says `sampled locally - … job failed`. The label never names a backend that was not used.
 5. **Stitch and repair.**
-   - Take each cluster's lowest-energy sample.
-   - Drop the lower-value candidate on every conflict between clusters.
-   - Greedily add back any compatible unused candidate.
-   - Every action is logged.
+   - For each cluster, take the **highest-value feasible** sample; if no sample is feasible, take the most frequent.
+   - Stitch the clusters together. Conflicts between clusters can only occur on the edges cut by the partition (233 of 439 in the default run).
+   - **Repair:** repeatedly drop the lowest-value candidate in a violated conflict, then greedily fill by value density.
+   - The console logs the **net change**: drops and adds versus the stitched schedule.
 
-The **default Run** uses a small instance: the top 10 districts over the first 24 h. It has 68 candidates and 9 clusters of at most 9 qubits, with precomputed angles, so the browser does no optimisation.
+The **default Run** uses a small instance: the top 10 districts over the first 24 h. It has 68 candidates and 8 clusters of 5–12 qubits, with precomputed angles, so the browser does no optimisation.
 
 ## 5. Results
 
@@ -131,7 +141,9 @@ The benchmark has 21 instances: the real event plus 20 seeded perturbations. Eac
 
 ![Schedule quality on 21 instances](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/ratios.png)
 
-The hybrid matches the control on **all 21 instances**: with 1,024 shots, QAOA finds every cluster's optimum. The loss comes from decomposition. The real conflict graph is one connected component, and in our partition into ≤12-qubit clusters **75% of conflicts (2,534 of 3,380) cross cluster boundaries**. Repair handles those conflicts but loses value in doing so.
+**Decomposition insight.** The hybrid matches the control (same split, exact answer per cluster) on **all 21 instances**: 0.949 vs 0.949. QAOA finds the best answer inside every cluster, so the **gap to the global optimum comes from splitting the problem, not from QAOA**. The live run computes and prints this from `results/e1.json`.
+
+With 1,024 shots, QAOA finds every cluster's optimum, so the loss comes from decomposition. The real conflict graph is one connected component, and in our partition into ≤12-qubit clusters **75% of conflicts (2,534 of 3,380) cross cluster boundaries**. Repair handles those conflicts but loses value in doing so.
 
 ### Fair diversity comparison: same QUBO, same 1,024-sample budget
 
@@ -146,9 +158,9 @@ The question: does QAOA sampling give more distinct good backup plans, useful if
 
 ![QAOA vs SA at the same sample budget](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/diversity.png)
 
-**Per cluster** (670 clusters with ≥4 candidates), QAOA found more distinct near-optimal schedules than SA in 59 clusters, fewer in 1, and the same number in 610. That is a small, consistent edge, bought with 30% infeasible samples.
+**Per cluster** (670 clusters with ≥4 candidates), QAOA averages **1.37** distinct schedules within 95% of optimal against SA's **1.26**, and the **error bars overlap**. QAOA had more in 59 clusters, fewer in 1, and the same number in 610. That is a small edge at best, and it costs feasibility: only **70%** of QAOA samples are feasible, against **100%** for SA.
 
-**For whole schedules, SA clearly wins**: it gives about twice as many good plans, and more varied ones. We report both levels because the per-cluster result alone would overstate what QAOA delivers.
+**For whole schedules, SA wins on diversity**: **303** distinct near-optimal schedules against **136** for the hybrid, and they are more varied (Hamming 26.4 vs 18.8). We report both levels because the per-cluster result alone would overstate what QAOA delivers.
 
 ### Connectivity: what IonQ's all-to-all connectivity buys
 
@@ -218,6 +230,8 @@ Each image is treated as a single spot, whereas real SAR swaths cover several di
 - District points are headquarters towns.
 - "People affected" is cumulative over three flood waves, so some people may be counted twice.
 - The pass geometry is from 2026 orbits, not 2022.
+
+**Better partitions are not just fewer cut conflicts.** We tried a partition that fills clusters up to 12 qubits, with uneven Kernighan–Lin splits and 5–10 restarts. On 8 instances it cut fewer conflicts (2,127 vs 2,461 on average), but schedule quality got *worse*: 0.955 vs 0.975 with exact per-cluster solves. Which conflicts are cut matters more than how many, so we kept the original partition. A value-aware partition is the obvious next step.
 
 **When quantum could matter:** our results suggest the bottleneck is the decomposition, not the sampler. Quantum help would need:
 - devices large enough to hold whole connected components (hundreds of qubits);
