@@ -29,10 +29,13 @@ from .qaoa import counts_to_samples, qaoa_circuit, sample_clusters, scaled_clust
 
 E1_JSON = "results/e1.json"
 E_LNS_JSON = "results/e_lns.json"
+E_SEEDS_JSON = "results/e_live_seeds.json"
 
-VERDICT = ("Honest verdict: no quantum advantage. Conditioned LNS makes the hybrid beat greedy, "
-           "but at 12 qubits an exact or SA sub-solver does just as well, and full-problem SA is "
-           "still best. QAOA's measurable contribution is sampling efficiency, not final quality.")
+VERDICT = ("Honest verdict: no quantum advantage. The gain over greedy comes from the conditioned LNS "
+           "neighbourhood structure: with 1,024 samples per neighbourhood, exact, SA and "
+           "uniform-random sub-solvers reach the same schedules, "
+           "and full-problem SA is still best. QAOA's measured contribution is sample efficiency "
+           "(more probability on each subproblem's optimum than uniform random), not final quality.")
 
 
 def _backend_name(backend) -> str:
@@ -52,18 +55,20 @@ def _line(char="-", n=72):
 
 
 def hybrid_label(bname: str, info: dict, n_units: int, unit: str = "neighbourhood") -> str:
-    """Results-row label that states where sampling actually happened."""
+    """Label of the QAOA stage row; states where sampling actually happened. The QAOA row
+    only ever carries the value after this one sweep, never the classical refinement."""
     pl = lambda k: f"{k} {unit}" + ("" if k == 1 else "s")  # noqa: E731
+    head = "+ one QAOA-sampled LNS sweep"
     if info["mode"] == "none":
-        return "Hybrid LNS: QAOA sampled locally - no backend"
+        return f"{head} (sampled locally, no backend)"
     if info["error"]:
         who = "IonQ" if info["mode"] == "packed" else bname
-        return f"Hybrid LNS: QAOA sampled locally - {who} job failed"
+        return f"{head} (sampled locally - {who} job failed)"
     r, l = info["remote"], info["local"]
     if info["mode"] == "packed":
         lab = f"IonQ: {pl(len(r))} / {info['remote_qubits']} qubits"
-        return f"Hybrid LNS: QAOA ({lab}; local: {pl(len(l))})" if l else f"Hybrid LNS: QAOA ({lab})"
-    return f"Hybrid LNS: QAOA ({bname}: all {pl(n_units)})"
+        return f"{head} (one job; {lab}; local: {pl(len(l))})" if l else f"{head} (one job; {lab})"
+    return f"{head} (one job; {bname}: all {pl(n_units)})"
 
 
 def gap_insight(e1_path: str = E1_JSON, lns_path: str = E_LNS_JSON) -> str:
@@ -72,26 +77,38 @@ def gap_insight(e1_path: str = E1_JSON, lns_path: str = E_LNS_JSON) -> str:
     bench = [r for r in e1["instances"] if r["instance"] != "default"]
     v1 = np.mean([r["methods"]["hybrid_warm_p1"]["ratio"] for r in bench])
     sa = np.mean([r["methods"]["sa"]["ratio"] for r in bench])
-    a = json.load(open(lns_path, encoding="utf-8"))["part_a"]
-    b = json.load(open(lns_path, encoding="utf-8"))["part_b"]
-    g, q, ex = a["greedy"]["final"][0], a["qaoa_q12"]["final"][0], a["exact_q12"]["final"][0]
-    lines = [f"Precomputed, {len(bench)} instances (ratio to exact optimum): greedy {g:.3f}; v1 hybrid "
-             f"(independent clusters + repair) {v1:.3f}; hybrid LNS + QAOA {q:.3f}; full-problem SA {sa:.3f}."]
-    if abs(q - ex) < 5e-4:
-        lines.append(f"  LNS + exact sub-solver gives {ex:.3f} too: at 12 qubits the sub-solver is not the "
-                     "limit; the neighbourhood structure is.")
-    if "exact_q16" in a and a["exact_q16"]["final"][0] > ex + 5e-4:
-        lines.append(f"  16-qubit neighbourhoods (classical sub-solvers) reach {a['exact_q16']['final'][0]:.3f}: "
+    d = json.load(open(lns_path, encoding="utf-8"))
+    a, b = d["part_a"], d["part_b"]
+    f = lambda k: a[k]["final"][0] if k in a else float("nan")  # noqa: E731
+    lines = [f"Precomputed, {len(bench)} instances (ratio to exact optimum): greedy {f('greedy'):.3f}; v1 hybrid "
+             f"(independent clusters + repair) {v1:.3f}; LNS {f('qaoa_q12'):.3f}; full-problem SA {sa:.3f}.",
+             f"  The gain from {v1:.3f} to {f('qaoa_q12'):.3f} comes from the LNS neighbourhood structure: with 1,024 "
+             f"samples per neighbourhood, QAOA {f('qaoa_q12'):.3f}, exact {f('exact_q12'):.3f}, SA {f('sa_q12'):.3f} "
+             f"and uniform-random-feasible {f('random_q12'):.3f} sub-solvers give the same result."]
+    if "exact_q16" in a and f("exact_q16") > f("exact_q12") + 5e-4:
+        lines.append(f"  16-qubit neighbourhoods (classical sub-solvers) reach {f('exact_q16'):.3f}: "
                      "more qubits per neighbourhood gives better schedules.")
-    qb, rb = a.get("qaoa_q12_b32"), a.get("random_q12_b32")
-    if qb and rb:
-        lines.append(f"  With only 32 shots per neighbourhood: QAOA {qb['final'][0]:.3f} vs uniform random "
-                     f"sampling {rb['final'][0]:.3f}. QAOA puts x{b['qaoa_over_random']['median_ratio']:.0f} "
-                     f"(median) more probability on each subproblem's optimum than uniform "
-                     f"({b['qaoa_over_random']['qaoa_higher']}/{b['qaoa_over_random']['n']}); "
-                     f"an SA restart still finds it more often ({b['p_sa']['mean']:.2f} vs "
-                     f"{b['p_qaoa']['mean']:.2f} per sample) but costs 100 sweeps.")
+    if "qaoa_q12_b32" in a:
+        lines.append(f"  With a budget of 32 per neighbourhood: QAOA {f('qaoa_q12_b32'):.3f} (32 shots), "
+                     f"SA {f('sa_q12_b32'):.3f} (32 restarts x 100 sweeps), uniform random feasible "
+                     f"{f('random_q12_b32'):.3f} (32 draws), uniform random bitstrings {f('random_all_q12_b32'):.3f} "
+                     f"(32 draws), exact ceiling {f('exact_q12_b32'):.3f}. Costs are in different units.")
+    o = b["qaoa_over_random"]
+    lines.append(f"  QAOA's measured contribution is sample efficiency: x{o['median_ratio']:.0f} (median) more "
+                 f"probability on each subproblem's optimum than uniform random feasible "
+                 f"({o['qaoa_higher']}/{o['n']} subproblems); one SA restart (100 sweeps) finds it with "
+                 f"probability {b['p_sa']['mean']:.2f}, one QAOA shot {b['p_qaoa']['mean']:.2f}.")
     return "\n".join(lines)
+
+
+def seed_insight(path: str = E_SEEDS_JSON) -> str:
+    s = json.load(open(path, encoding="utf-8"))["summary"]
+    q, c = s["quantum_sweep"], s["after_classical"]
+    others = [v for v in q["values"] if v < 1 - 1e-9]
+    return (f"Seed {s['project_seed']} is the project's fixed seed. Across {s['n_seeds']} seeds the one-job "
+            f"QAOA-sampled sweep reaches the optimum on {q['optimal']} and "
+            f"{'/'.join(f'{v:.3f}' for v in others)} on the rest; with the classical sweeps "
+            f"{c['optimal']}/{s['n_seeds']} reach 1.000.")
 
 
 def _neighbourhood_params(inst, hoods, adj):
@@ -208,19 +225,27 @@ def run_default(backend=None, shots: int = 1024, seed: int = 7) -> str:
     print("[4/4] Results (value = priority x people x urgency x image quality; 1.000 = exact optimum)")
     hlabel = hybrid_label(bname, info, len(circuits))
     rows = [("exact", "Exact optimum (MILP, precomputed)", x_exact, None),
-            ("greedy", "Greedy (value density)", xg, t_g),
-            ("sa", f"Simulated annealing ({shots} restarts)", xs, t_s),
-            ("hybrid_quantum_sweep", hlabel, x_q, t_q),
+            ("sa", f"Simulated annealing, full problem ({shots} restarts)", xs, t_s),
+            (None, "Hybrid LNS, stage by stage:", None, None),
+            ("greedy", "  Greedy incumbent (value density)", xg, t_g),
+            ("hybrid_quantum_sweep", "  " + hlabel, x_q, t_q),
             ("hybrid", f"  + {k_cl} classical LNS sweeps (exact sub-solver)", x_c, t_c)]
     width = max(46, max(len(r[1]) for r in rows) + 2)
     print(f"  {'method':<{width}}{'ratio':>7}{'images':>8}{'feasible':>10}{'time s':>8}")
     out_methods = {}
     for key, name, xx, rt in rows:
+        if key is None:
+            print(f"  {name}")
+            continue
         val = float(np.dot(xx, w))
         print(f"  {name:<{width}}{approx_ratio(val, opt):>7.3f}{int(np.sum(xx)):>8d}"
               f"{str(is_feasible(xx, edges)):>10}{('-' if rt is None else f'{rt:.2f}'):>8}")
-        out_methods[key] = {"label": name, "ratio": approx_ratio(val, opt), "x": [int(v) for v in xx],
+        out_methods[key] = {"label": name.strip(), "ratio": approx_ratio(val, opt), "x": [int(v) for v in xx],
                             "runtime_s": rt}
+    try:
+        print("  " + seed_insight())
+    except Exception as e:
+        print(f"  (seed summary unavailable: {type(e).__name__})")
     _line()
     try:
         print("What the benchmarks say: " + gap_insight())

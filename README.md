@@ -13,28 +13,29 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 >    - **IonQ Aria 1 (25q):** a remote noise-model simulator that may queue. IonQ accepts **one circuit per job**. By default the run sends the **largest cluster (12 qubits)** to IonQ as that one circuit and samples the other 7 clusters locally; the console lists which ran where. See *IonQ qubit budget* below. Verified on Qollab (Oct 10, 2026): the 12-qubit circuit ran on IonQ Aria 1 in one job, and the whole run took about 14 s, mostly the remote IonQ job.
 >
 >    *Run settings* offers `shots` (default 1024) and `charts` (default on).
-> 3. What the run does (the default scenario: top 10 districts over the first 24 h, 68 candidate images, 8 QAOA clusters of 5–12 qubits):
->    - samples the QAOA clusters;
->    - keeps each cluster's best feasible sample, stitches the clusters together and repairs conflicts between them;
->    - runs greedy and simulated annealing live;
->    - compares everything with the exact optimum;
+> 3. What the run does (the default scenario: top 10 districts over the first 24 h, 68 candidate images):
+>    - builds the greedy schedule (the incumbent) and 7 neighbourhoods of at most 12 candidates around it, each conditioned on the rest of the schedule;
+>    - samples one warm-start QAOA circuit per neighbourhood in **one job**, and applies each neighbourhood's best compatible sample if it raises the schedule value;
+>    - runs 5 more LNS sweeps with an exact classical sub-solver (labelled classical);
+>    - runs simulated annealing live and compares everything with the exact optimum;
 >    - draws four figures.
 > 4. What to look for:
->    - **where each cluster ran** (backend or local);
->    - **the results table**: its hybrid row names where sampling actually happened, e.g. `Hybrid QAOA (IonQ: 1 cluster / 12 qubits; local: 7 clusters)`;
->    - **the "where the gap comes from" line**;
->    - **the honest verdict**.
+>    - **where each neighbourhood was sampled** (backend or local);
+>    - **the results table, stage by stage**: `Greedy incumbent 0.988`, `+ one QAOA-sampled LNS sweep (one job) 0.995`, `+ 5 classical LNS sweeps 1.000`. The 1.000 comes from the classical sweeps, not from QAOA;
+>    - **the seed line**: 7 is the project's fixed seed. Across 20 seeds the one-job QAOA-sampled sweep reaches the optimum on 3 and 0.995 on the other 17; with the classical sweeps, 8 of 20 reach 1.000 (`results/e_live_seeds.json`);
+>    - **the benchmark lines and the honest verdict**.
 >
->    Qollab's **Probabilities panel shows one circuit only**. On local simulators it is the largest cluster, which is submitted last; on IonQ it is the single packed circuit. The console says which.
+>    Qollab's **Probabilities panel shows one circuit only**. On local simulators it is the largest neighbourhood, which is submitted last; on IonQ it is the single packed circuit. The console says which.
 
 > ### Honest verdict
-> **At this size, classical methods find schedules at least as good as the hybrid**:
-> - simulated annealing averages 0.997 of the optimum and greedy 0.984, against the hybrid's 0.949;
-> - the hybrid's whole gap comes from cutting the problem into qubit-sized pieces, not from QAOA.
+> **No quantum advantage.** On 21 instances (ratio to the exact optimum):
+> - v1 hybrid (independent clusters + repair) **0.949**, greedy **0.984**, conditioned LNS **0.993**, full-problem simulated annealing **0.997**.
+> - **The gain from 0.949 to 0.993 comes from the LNS neighbourhood structure, not from QAOA.** With 1,024 samples per neighbourhood, the exact, SA and uniform-random sub-solvers reach the identical 0.993.
+> - With 32 per neighbourhood, QAOA (32 shots) and SA (32 restarts × 100 sweeps) both still reach 0.993, the exact ceiling. Uniform random falls to 0.988 over feasible sets and 0.984 over all bitstrings.
 >
 > What the quantum part adds, measured fairly:
-> - **slightly more variety** among near-optimal plans per cluster, though the error bars overlap (for whole schedules, SA wins on variety);
-> - **far fewer two-qubit gates** on all-to-all trapped-ion hardware than on nearest-neighbour layouts: 1.7× fewer at 24 qubits.
+> - **sample efficiency**: QAOA puts **17× (median) more probability** on each subproblem's optimum than uniform random feasible sampling, on **354 of 354** subproblems. One SA restart still finds the optimum more often (0.70 vs 0.19 per sample), at the cost of 100 sweeps;
+> - **far fewer two-qubit gates** on all-to-all trapped-ion hardware: the full event as one QAOA circuit needs 6,760 two-qubit gates all-to-all against 22,905 on a grid and 32,124 on heavy-hex (p = 1).
 >
 > We make **no quantum-advantage claim**.
 
@@ -150,6 +151,73 @@ The benchmark has 21 instances: the real event plus 20 seeded perturbations. Eac
 
 With 1,024 shots, QAOA finds every cluster's optimum, so the loss comes from decomposition. The real conflict graph is one connected component, and in our partition into ≤12-qubit clusters **75% of conflicts (2,534 of 3,380) cross cluster boundaries**. Repair handles those conflicts but loses value in doing so.
 
+### Conditioned large-neighbourhood search (LNS): the fix for the decomposition gap
+
+**Method.**
+- Start from the greedy schedule.
+- Each sweep builds neighbourhoods around the current schedule: release a few selected images, plus every unselected image blocked only by them, keeping each neighbourhood at most 12 qubits.
+- Each neighbourhood is solved *given* the rest of the schedule, so no conflict outside it can be violated.
+- A proposal is accepted only if it raises the total value, so the result is never worse than greedy and always feasible (both tested).
+- A fixed partition gave **zero** gain even with an exact sub-solver: moving a district's image means dropping a pick in one cluster and adding one in another, which no single fixed cluster can see.
+
+Same 21 instances, same seeds, 10 sweeps, every sub-solver at the same budget per neighbourhood (`preprocessing/run_lns.py` → `results/e_lns.json`):
+
+| Sub-solver inside LNS | Budget per neighbourhood (its own units) | Mean ± sd | Worst | Optimal |
+| --- | --- | --- | --- | --- |
+| Greedy (no LNS) | – | 0.984 ± 0.024 | 0.899 | – |
+| Exact (ceiling), 12 qubits | brute force over 2ⁿ | 0.993 ± 0.009 | 0.960 | 4/21 |
+| QAOA (warm start, CVaR, p=1), 12 qubits | 1,024 shots | 0.993 ± 0.009 | 0.960 | 4/21 |
+| SA, 12 qubits | 1,024 restarts × 100 sweeps | 0.993 ± 0.009 | 0.960 | 4/21 |
+| Uniform random **feasible** schedules, 12 qubits | 1,024 draws | 0.993 ± 0.009 | 0.960 | 4/21 |
+| Exact (ceiling), 12 qubits, rerun beside the 32-budget rows | – | 0.993 ± 0.009 | 0.960 | 4/21 |
+| QAOA, 12 qubits | **32 shots** | 0.993 ± 0.009 | 0.960 | 4/21 |
+| SA, 12 qubits | **32 restarts** × 100 sweeps | 0.993 ± 0.009 | 0.960 | 4/21 |
+| Uniform random feasible, 12 qubits | **32 draws** | 0.988 ± 0.016 | 0.948 | 2/21 |
+| Uniform random **bitstrings** (all 2ⁿ), 12 qubits | **32 draws** | 0.984 ± 0.024 | 0.900 | 0/21 |
+| Exact / SA / random feasible, **16 qubits** | as above, 1,024 | 0.995 ± 0.009 | 0.960 | 7/21 |
+
+What the table says:
+- **The neighbourhood structure is the limit, not the sub-solver.** At 1,024 samples, QAOA, exact, SA and random feasible are identical. At 32, QAOA and SA still match the exact ceiling.
+- **Larger neighbourhoods help.** 16 qubits beat 12, so more candidates per qubit is the clearest path to better schedules (Step 4: binary encoding).
+- **Costs are not comparable one-to-one.**
+  - A QAOA shot is one run of a p=1 circuit, whose angles are tuned offline on a statevector.
+  - An SA restart is 100 sweeps of n single-spin updates.
+  - "Uniform random feasible" first enumerates all 2ⁿ assignments to list the feasible ones, which is itself an exponential classical step. "Uniform random bitstrings" draws from all 2ⁿ assignments without enumeration and rejects infeasible ones.
+
+**Sampler quality on identical subproblems** (354 subproblems of 9–12 candidates):
+
+| Sampler | P(optimum) per sample, mean | Hit within 8 | Hit within 32 |
+| --- | --- | --- | --- |
+| QAOA, one shot | 0.191 | 0.81 | 0.998 |
+| SA, one restart (100 sweeps) | 0.702 | 0.995 | 1.000 |
+| Uniform random feasible, one draw | 0.012 | 0.09 | 0.32 |
+| Uniform random bitstring, one draw | 0.0004 | 0.003 | 0.012 |
+
+QAOA beats uniform random feasible sampling on all 354 subproblems (median 17×). SA beats QAOA per sample.
+
+**Live run, stage by stage** (default instance, seed 7, the project's fixed seed): greedy incumbent **0.988** → one QAOA-sampled LNS sweep in one job **0.995** → 5 classical LNS sweeps **1.000**. Across 20 seeds (`preprocessing/run_live_seeds.py`), the QAOA-sampled sweep gives 0.995 on 17 and the optimum on 3; after the classical sweeps, 8 of 20 reach 1.000.
+
+### Resource estimate: the whole problem as one QAOA circuit
+
+`preprocessing/run_resources.py` → `results/e_resources.json`. Every circuit is compiled directly (Qiskit, level 3, seed 42, basis rz/sx/x/cx), with no extrapolation. The success column uses a simple gate-error-only model, (1 − e2)^gates, and is **not a hardware prediction**: it ignores single-qubit and readout errors, decoherence over the depth, and the number of shots needed.
+
+| Instance | Qubits, one-hot | Qubits, binary (analytic) | 2q gates p=1: all-to-all / grid / heavy-hex | Depth p=1 (all-to-all) | e2 for success 0.5 (all-to-all / grid) |
+| --- | --- | --- | --- | --- | --- |
+| 6 h | 44 | 14 | 714 / 1,379 / 1,687 | 177 | 9.7e-4 / 5.0e-4 |
+| Default live (10 districts, 24 h) | 68 | 34 | 878 / 2,175 / 2,996 | 292 | 7.9e-4 / 3.2e-4 |
+| 24 h | 151 | 45 | 3,328 / 9,883 / 13,468 | 668 | 2.1e-4 / 7.0e-5 |
+| **Full event, 48 h** | **268** | **92** | **6,760 / 22,905 / 32,124** | 1,153 | **1.0e-4 / 3.0e-5** |
+
+At p = 2, the full event needs 13,520 / 50,960 / 70,590 two-qubit gates (all-to-all / grid / heavy-hex).
+
+The binary column is a **count only**:
+- Cliques of the conflict graph are "at most one" groups. A greedy clique cover gives 25 groups for the full event, and a group of k candidates needs ⌈log₂(k+1)⌉ qubits.
+- That encoding adds multi-qubit terms whose gate cost is not included here.
+
+![Resource estimate](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/improve/docs/figures/resources.png)
+
+**Reading it.** The full event as a single circuit needs 268 qubits and about 6,800 two-qubit gates on all-to-all hardware. Under the simple model, a useful single-shot success (0.5) needs two-qubit error near **1e-4** on all-to-all and near **3e-5** on a grid, about 3× lower because of SWAP overhead. Current commercial two-qubit errors are around 1e-3 or higher, so whole-problem QAOA is out of reach. The LNS pipeline sidesteps this by using ≤12-qubit circuits.
+
 ### Fair diversity comparison: same QUBO, same 1,024-sample budget
 
 The question: does QAOA sampling give more distinct good backup plans, useful if priorities change?
@@ -238,7 +306,7 @@ Each image is treated as a single spot, whereas real SAR swaths cover several di
 
 **Better partitions are not just fewer cut conflicts.** We tried a partition that fills clusters up to 12 qubits, with uneven Kernighan–Lin splits and 5–10 restarts. On 8 instances it cut fewer conflicts (2,127 vs 2,461 on average), but schedule quality got *worse*: 0.955 vs 0.975 with exact per-cluster solves. Which conflicts are cut matters more than how many, so we kept the original partition. A value-aware partition is the obvious next step.
 
-**When quantum could matter:** our results suggest the bottleneck is the decomposition, not the sampler. Quantum help would need:
+**When quantum could matter:** conditioned LNS closes most of the decomposition gap with any sub-solver, and larger neighbourhoods help, so the lever is more candidates per circuit (larger devices or a denser encoding), not a better sampler. Quantum help would need:
 - devices large enough to hold whole connected components (hundreds of qubits);
 - error rates low enough that deep, dense circuits survive, which is where all-to-all connectivity saves the most gates.
 
@@ -278,6 +346,9 @@ python3.12 -m venv .venv && .venv/bin/pip install -r preprocessing/requirements-
 .venv/bin/python preprocessing/compute_windows.py     # orbits -> data/windows.json
 .venv/bin/python preprocessing/run_experiments.py     # E1, E-DIV, E-CONN, E2, E3, E5 -> results/  (~5 min, 8 cores)
 .venv/bin/python preprocessing/run_noise.py           # E4 -> results/e4.json
+.venv/bin/python preprocessing/run_lns.py             # conditioned LNS + controls -> results/e_lns.json (~5 min)
+.venv/bin/python preprocessing/run_live_seeds.py      # live recipe over 20 seeds -> results/e_live_seeds.json
+.venv/bin/python preprocessing/run_resources.py       # resource estimate -> results/e_resources.json
 .venv/bin/python preprocessing/save_figures.py        # -> docs/figures/*.png
 .venv/bin/python preprocessing/build_ui_data.py       # -> ui/data.js (optional interactive page)
 .venv/bin/python -m pytest -q tests                   # all tests

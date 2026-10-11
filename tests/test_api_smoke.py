@@ -64,7 +64,7 @@ def test_ionq_default_budget_sends_largest_neighbourhood_only():
     assert s["mode"] == "packed" and s["error"] is None and s["remote_qubits"] <= 12
     assert be.sent[0].num_qubits == s["remote_qubits"] and be.sent[0].num_clbits == s["remote_qubits"]
     k, rest = len(s["remote"]), len(s["local"])
-    assert r["hybrid_label"].startswith(f"Hybrid LNS: QAOA (IonQ: {k} neighbourhood")
+    assert r["hybrid_label"].startswith(f"+ one QAOA-sampled LNS sweep (one job; IonQ: {k} neighbourhood")
     assert f"local: {rest} neighbourhood" in r["hybrid_label"]
 
 
@@ -124,7 +124,7 @@ def test_ionq_failure_is_labelled_local():
     be = Broken()
     r = json.loads(run_default(be, shots=64))
     assert be.jobs == 1
-    assert r["hybrid_label"] == "Hybrid LNS: QAOA sampled locally - IonQ job failed"
+    assert r["hybrid_label"] == "+ one QAOA-sampled LNS sweep (sampled locally - IonQ job failed)"
     assert "ionq" not in r["hybrid_label"].lower().replace("ionq job failed", "")
 
 
@@ -181,3 +181,12 @@ def test_main_py_entry_point(capsys):
     out = capsys.readouterr().out
     assert "Honest verdict" in out and "Total runtime" in out
     assert "What the benchmarks say" in out and "Probabilities panel" in out
+
+
+def test_qaoa_row_never_carries_classical_value():
+    from fsq.api import run_default
+    r = json.loads(run_default(None))
+    m = r["methods"]
+    assert "QAOA" in m["hybrid_quantum_sweep"]["label"]
+    assert "QAOA" not in m["hybrid"]["label"] and "classical" in m["hybrid"]["label"]
+    assert m["hybrid"]["ratio"] >= m["hybrid_quantum_sweep"]["ratio"] >= m["greedy"]["ratio"]

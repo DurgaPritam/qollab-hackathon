@@ -30,6 +30,7 @@ def main():
         "connectivity_p2.png": plots.connectivity_chart(2),
         "diversity.png": plots.diversity_chart(),
         "ratios.png": plots.ratio_chart(),
+        "resources.png": plots.resource_chart(),
     }
     for name, fig in figs.items():
         fig.savefig(f"docs/figures/{name}", dpi=150, facecolor="white")

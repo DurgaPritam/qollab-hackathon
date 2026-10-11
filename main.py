@@ -25,6 +25,7 @@ DATA_FILES = (
     "results/e_div.json",
     "results/e_conn.json",
     "results/e_lns.json",
+    "results/e_live_seeds.json",
 )
 
 

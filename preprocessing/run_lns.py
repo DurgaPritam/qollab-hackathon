@@ -42,6 +42,12 @@ MAX_FREE = 12
 LARGER_FREE = 16           # exact / SA / random only (QAOA tuning at 16 qubits is too slow offline)
 BUDGETS_B = [8, 32, 128, 1024]
 SMALL_BUDGET = 32         # shot budget where the sampler's distribution can matter
+# What one unit of "budget" costs for each sub-solver, in its own units (not comparable 1:1).
+COSTS = {"qaoa": "budget = shots of one p=1 circuit per neighbourhood (angles tuned offline on a statevector)",
+         "sa": "budget = restarts per neighbourhood, each 100 sweeps of n single-spin updates",
+         "random": "budget = draws per neighbourhood, after enumerating all 2^n assignments to list the feasible ones",
+         "random_all": "budget = uniform bitstring draws per neighbourhood, no enumeration",
+         "exact": "brute force over 2^n assignments per neighbourhood; budget ignored (ceiling)"}
 
 
 def instances(n_pert):
@@ -90,12 +96,13 @@ def job_b(args):
     probs, prm, _ = qaoa_distribution(wl, el)
     p_qaoa = float(probs[is_opt].sum())
     p_rand = float(is_opt.sum() / feas.sum())
+    p_rand_all = float(is_opt.sum() / len(X))
     m = max(wl)
     Xs = simulated_annealing([v / m for v in wl], el, restarts=BUDGET, seed=seed, sweeps=100, P=1.2)
     sv = np.where(feasible_mask(Xs, el), Xs @ np.asarray(wl), -1.0)
     p_sa = float(np.mean(sv >= opt - 1e-12))
     return {"n": n, "edges": len(el), "n_feasible": int(feas.sum()), "n_opt": int(is_opt.sum()),
-            "p_qaoa": p_qaoa, "p_random": p_rand, "p_sa": p_sa,
+            "p_qaoa": p_qaoa, "p_random": p_rand, "p_random_all": p_rand_all, "p_sa": p_sa,
             "qaoa_feasible": float(probs[feas].sum())}
 
 
@@ -117,7 +124,8 @@ def main():
 
     jobs = [(inst, seed, s, MAX_FREE, BUDGET) for inst, seed in insts for s in ("exact", "qaoa", "sa", "random")]
     jobs += [(inst, seed, s, LARGER_FREE, BUDGET) for inst, seed in insts for s in ("exact", "sa", "random")]
-    jobs += [(inst, seed, s, MAX_FREE, SMALL_BUDGET) for inst, seed in insts for s in ("qaoa", "sa", "random")]
+    jobs += [(inst, seed, s, MAX_FREE, SMALL_BUDGET) for inst, seed in insts for s in ("qaoa", "sa", "random", "random_all")]
+    jobs += [(inst, seed, "exact", MAX_FREE, SMALL_BUDGET) for inst, seed in insts]
     with Pool(min(8, os.cpu_count() or 2)) as pool:
         res_a = []
         for r in pool.imap_unordered(job_a, jobs):
@@ -153,7 +161,7 @@ def main():
 
     # ---- aggregate part B
     pb = {}
-    for k in ("p_qaoa", "p_random", "p_sa"):
+    for k in ("p_qaoa", "p_random", "p_random_all", "p_sa"):
         p = np.array([r[k] for r in res_b])
         pb[k] = {"mean": float(p.mean()), "median": float(np.median(p)),
                  "hit_within": {str(B): float(np.mean(1 - (1 - p) ** B)) for B in BUDGETS_B}}
@@ -169,7 +177,9 @@ def main():
                     "incumbent": "greedy", "n_instances": len(insts),
                     "qaoa": "warm start (clique LP, eps 0.25), CVaR alpha 0.2, p=1, grid 8x8 + COBYLA 60, exact statevector",
                     "sa_proposer": f"{BUDGET} restarts x 100 sweeps",
-                    "random_proposer": "uniform over all feasible schedules of the subproblem"},
+                    "random_proposer": "uniform over all feasible schedules of the subproblem",
+                    "random_all_proposer": "uniform over all 2^n bitstrings (infeasible rejected)",
+                    "costs": COSTS},
            "part_a": summary, "part_b": pb, "part_b_subproblems": res_b}
     json.dump(out, open("results/e_lns.json", "w"))
     print(f"\nPart A (ratio to exact after {SWEEPS} sweeps, {len(insts)} instances):")
@@ -179,7 +189,7 @@ def main():
         print(f"  {key:<20}  {s_['final'][0]:.4f} ± {s_['final'][1]:.4f}  worst {s_['worst']:.4f}  "
               f"optimal {s_['optimal']}/{len(insts)}  moves {s_['moves'][0]:.0f}  {s_['runtime_s'][0]:.0f}s")
     print(f"\nPart B ({len(res_b)} subproblems, size {pb['sizes'][0]:.1f}):")
-    for k in ("p_qaoa", "p_random", "p_sa"):
+    for k in ("p_qaoa", "p_random", "p_random_all", "p_sa"):
         print(f"  {k:<9} P(opt) mean {pb[k]['mean']:.3f}  hit within " +
               ", ".join(f"{B}: {pb[k]['hit_within'][str(B)]:.3f}" for B in BUDGETS_B))
     print(f"  QAOA / random P(opt): median x{pb['qaoa_over_random']['median_ratio']:.2f}, "

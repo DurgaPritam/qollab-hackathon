@@ -145,3 +145,42 @@ def ratio_chart():
     _style(ax, f"Schedule quality on {len(e)} instances (dots = instances, bar = mean)")
     fig.tight_layout()
     return fig
+
+
+def resource_chart(path: str = "results/e_resources.json"):
+    """Step 2: one-circuit QAOA cost for the real instances (precomputed, directly compiled)."""
+    import matplotlib.pyplot as plt
+
+    d = json.load(open(path))
+    rows = sorted(d["rows"], key=lambda r: r["candidates"])
+    topo = (("all_to_all", "All-to-all (trapped ion)", BLUE), ("grid", "Square grid", ORANGE),
+            ("heavy_hex", "Heavy-hex", AQUA))
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(10, 4.2))
+    n = [r["candidates"] for r in rows]
+    for key, label, c in topo:
+        y = [r["by_p"]["1"][key]["two_qubit"] for r in rows]
+        a1.plot(n, y, color=c, linewidth=2, marker="o", markersize=6, label=label)
+        a1.annotate(f"{y[-1]:,}", (n[-1], y[-1]), xytext=(6, -3), textcoords="offset points", fontsize=9, color=INK)
+    a1.set_yscale("log")
+    a1.set_xticks(n)
+    a1.set_xlim(right=n[-1] * 1.18)
+    _style(a1, "Two-qubit gates, one QAOA circuit (p=1)")
+    a1.set_xlabel("qubits (one-hot: candidate images)", color=MUTED)
+    a1.set_ylabel("two-qubit gates after transpile (log)", color=MUTED)
+    a1.legend(frameon=False, fontsize=9)
+
+    full = rows[-1]
+    e2 = np.logspace(-5, -2, 61)
+    for key, label, c in topo:
+        g = full["by_p"]["1"][key]["two_qubit"]
+        a2.plot(e2, (1 - e2) ** g, color=c, linewidth=2, label=label)
+    a2.axhline(d["meta"]["target_success"], color=MUTED, linewidth=1, linestyle="--")
+    a2.set_xscale("log")
+    a2.set_ylim(0, 1.02)
+    _style(a2, f"Full event ({full['candidates']} qubits): simple model (1-e2)^gates")
+    a2.set_xlabel("two-qubit gate error e2 (log)", color=MUTED)
+    a2.set_ylabel("estimated circuit success", color=MUTED)
+    fig.text(0.01, 0.01, "Gate-error-only model, not a hardware prediction. Compiled with Qiskit "
+             "(level 3); no extrapolation.", fontsize=8, color=MUTED)
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    return fig

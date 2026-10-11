@@ -109,6 +109,13 @@ def propose_random(wl, el, budget, seed, **_):
     return F[rng.integers(0, len(F), size=budget)]
 
 
+def propose_random_all(wl, el, budget, seed, **_):
+    """Uniform random bitstrings over ALL 2^n assignments (infeasible ones are rejected at
+    acceptance). Weaker than propose_random, which samples feasible schedules only."""
+    rng = np.random.default_rng(seed)
+    return rng.integers(0, 2, size=(budget, len(wl)), dtype=np.int8)
+
+
 def qaoa_distribution(wl, el, p: int = 1, alpha: float = 0.2, eps: float = 0.25,
                       penalty_mult: float = 1.2, grid: int = 8, maxiter: int = 60):
     """Warm-start CVaR-QAOA for one subproblem: tuned angles and the exact output
@@ -129,7 +136,8 @@ def propose_qaoa(wl, el, budget, seed, **_):
     return sample_from_probs(probs, len(wl), budget, seed)
 
 
-SOLVERS = {"exact": propose_exact, "qaoa": propose_qaoa, "sa": propose_sa, "random": propose_random}
+SOLVERS = {"exact": propose_exact, "qaoa": propose_qaoa, "sa": propose_sa, "random": propose_random,
+           "random_all": propose_random_all}
 
 
 # --------------------------------------------------------------------------- acceptance
