@@ -1,4 +1,4 @@
-"""Build dist/floodsight-q-improve.zip for Qollab's "Upload your own files" (checks Qollab's limits).
+"""Build dist/floodsight-q.zip for Qollab's "Upload your own files" (checks Qollab's limits).
 
     .venv/bin/python preprocessing/package_qollab.py
 """
@@ -31,11 +31,11 @@ def main():
     assert len(fs) <= MAX_FILES, f"{len(fs)} files > {MAX_FILES}"
     assert not big, f"files over 2 MB: {big}"
     os.makedirs("dist", exist_ok=True)
-    with zipfile.ZipFile("dist/floodsight-q-improve.zip", "w", zipfile.ZIP_DEFLATED) as z:
+    with zipfile.ZipFile("dist/floodsight-q.zip", "w", zipfile.ZIP_DEFLATED) as z:
         for f in fs:
             z.write(f, f)
     total = sum(os.path.getsize(f) for f in fs)
-    print(f"dist/floodsight-q-improve.zip: {len(fs)} files, {total / 1024:.0f} KB uncompressed, "
+    print(f"dist/floodsight-q.zip: {len(fs)} files, {total / 1024:.0f} KB uncompressed, "
           f"largest {max(fs, key=os.path.getsize)} ({os.path.getsize(max(fs, key=os.path.getsize)) / 1024:.0f} KB)")
 
 

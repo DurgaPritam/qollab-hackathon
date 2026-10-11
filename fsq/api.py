@@ -15,6 +15,7 @@ Default run (fast, no optimisation in the browser), conditioned large-neighbourh
 from __future__ import annotations
 
 import json
+import textwrap
 import time
 
 import numpy as np
@@ -50,25 +51,33 @@ def _backend_name(backend) -> str:
     return "unknown" if backend is not None else "none (local)"
 
 
+def _say(text: str, indent: str = "  ", width: int = 88):
+    """Print prose wrapped to the console width (each source line kept as a paragraph)."""
+    for para in text.split("\n"):
+        lead = para[:len(para) - len(para.lstrip())]
+        print(textwrap.fill(para.strip(), width, initial_indent=lead or indent,
+                            subsequent_indent=(lead or indent) + "  "))
+
+
 def _line(char="-", n=72):
     print(char * n)
 
 
-def hybrid_label(bname: str, info: dict, n_units: int, unit: str = "neighbourhood") -> str:
+def hybrid_label(bname: str, info: dict, n_units: int, unit: str = "nbhd") -> str:
     """Label of the QAOA stage row; states where sampling actually happened. The QAOA row
     only ever carries the value after this one sweep, never the classical refinement."""
-    pl = lambda k: f"{k} {unit}" + ("" if k == 1 else "s")  # noqa: E731
-    head = "+ one QAOA-sampled LNS sweep"
+    head = "+ QAOA LNS sweep, 1 job"
+    bname = bname if len(bname) <= 18 else bname[:17] + "~"
     if info["mode"] == "none":
-        return f"{head} (sampled locally, no backend)"
+        return "+ QAOA LNS sweep (local, no backend)"
     if info["error"]:
         who = "IonQ" if info["mode"] == "packed" else bname
-        return f"{head} (sampled locally - {who} job failed)"
+        return f"+ QAOA LNS sweep (local; {who} job failed)"
     r, l = info["remote"], info["local"]
     if info["mode"] == "packed":
-        lab = f"IonQ: {pl(len(r))} / {info['remote_qubits']} qubits"
-        return f"{head} (one job; {lab}; local: {pl(len(l))})" if l else f"{head} (one job; {lab})"
-    return f"{head} (one job; {bname}: all {pl(n_units)})"
+        lab = f"IonQ {len(r)} {unit}/{info['remote_qubits']}q"
+        return f"{head} ({lab}; local {len(l)})" if l else f"{head} ({lab})"
+    return f"{head} ({bname}, {n_units} {unit}s)"
 
 
 def gap_insight(e1_path: str = E1_JSON, lns_path: str = E_LNS_JSON) -> str:
@@ -225,12 +234,12 @@ def run_default(backend=None, shots: int = 1024, seed: int = 7) -> str:
     print("[4/4] Results (value = priority x people x urgency x image quality; 1.000 = exact optimum)")
     hlabel = hybrid_label(bname, info, len(circuits))
     rows = [("exact", "Exact optimum (MILP, precomputed)", x_exact, None),
-            ("sa", f"Simulated annealing, full problem ({shots} restarts)", xs, t_s),
-            (None, "Hybrid LNS, stage by stage:", None, None),
-            ("greedy", "  Greedy incumbent (value density)", xg, t_g),
+            ("sa", f"Simulated annealing ({shots} restarts)", xs, t_s),
+            (None, "Hybrid LNS, stage by stage (nbhd = neighbourhood):", None, None),
+            ("greedy", "  Greedy incumbent", xg, t_g),
             ("hybrid_quantum_sweep", "  " + hlabel, x_q, t_q),
-            ("hybrid", f"  + {k_cl} classical LNS sweeps (exact sub-solver)", x_c, t_c)]
-    width = max(46, max(len(r[1]) for r in rows) + 2)
+            ("hybrid", f"  + {k_cl} classical LNS sweeps (exact)", x_c, t_c)]
+    width = max(40, max(len(r[1]) for r in rows if r[0]) + 1)
     print(f"  {'method':<{width}}{'ratio':>7}{'images':>8}{'feasible':>10}{'time s':>8}")
     out_methods = {}
     for key, name, xx, rt in rows:
@@ -243,20 +252,20 @@ def run_default(backend=None, shots: int = 1024, seed: int = 7) -> str:
         out_methods[key] = {"label": name.strip(), "ratio": approx_ratio(val, opt), "x": [int(v) for v in xx],
                             "runtime_s": rt}
     try:
-        print("  " + seed_insight())
+        _say(seed_insight())
     except Exception as e:
         print(f"  (seed summary unavailable: {type(e).__name__})")
     _line()
     try:
-        print("What the benchmarks say: " + gap_insight())
+        _say("What the benchmarks say: " + gap_insight(), indent="")
     except Exception as e:
         print(f"(benchmark insight unavailable: {type(e).__name__})")
     if info["panel"]:
-        print(f"Probabilities panel: shows {info['panel']}. All neighbourhoods are summarised above.")
+        _say(f"Probabilities panel: shows {info['panel']}. All neighbourhoods are summarised above.", indent="")
     else:
         print("Probabilities panel: no circuit ran on a backend in this run (all sampled locally).")
     _line()
-    print(VERDICT)
+    _say(VERDICT, indent="")
     print(f"Total runtime: {time.perf_counter() - t_all:.1f} s")
     _line("=")
     return json.dumps({"backend": bname, "shots": shots, "sampling": info, "hybrid_label": hlabel,

@@ -9,8 +9,8 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 > ### How to run
 > 1. Open the project in **Chrome or Edge** (Brave, Opera and Firefox 153+ also work). **Safari cannot run Qollab projects.**
 > 2. Click **Run Project**. In *Select QPU*, choose one of:
->    - **Built-in simulator (24q):** about **23 s** on the first run (Qollab loads its packages) and about **9 s** after; our Python code itself takes 1–3 s.
->    - **IonQ Aria 1 (25q):** a remote noise-model simulator that may queue. IonQ accepts **one circuit per job**. By default the run sends the **largest cluster (12 qubits)** to IonQ as that one circuit and samples the other 7 clusters locally; the console lists which ran where. See *IonQ qubit budget* below. Verified on Qollab (Oct 10, 2026): the 12-qubit circuit ran on IonQ Aria 1 in one job, and the whole run took about 14 s, mostly the remote IonQ job.
+>    - **Built-in simulator (24q):** about **25 s** on the first run (Qollab loads its packages) and about **9 s** after; our Python code itself takes about 1 s.
+>    - **IonQ Aria 1 (25q):** a remote noise-model simulator; the run takes about **20–30 s plus any queue**. IonQ accepts **one circuit per job**. By default the run sends the **largest neighbourhood (12 qubits)** to IonQ as that one circuit and samples the other 6 locally; the console lists which ran where. See *IonQ qubit budget* below. Verified on Qollab (Oct 11, 2026): built-in simulator 1.1 s of Python, IonQ Aria 1 17.7 s, no errors.
 >
 >    *Run settings* offers `shots` (default 1024) and `charts` (default on).
 > 3. What the run does (the default scenario: top 10 districts over the first 24 h, 68 candidate images):
@@ -21,7 +21,7 @@ Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 >    - draws four figures.
 > 4. What to look for:
 >    - **where each neighbourhood was sampled** (backend or local);
->    - **the results table, stage by stage**: `Greedy incumbent 0.988`, `+ one QAOA-sampled LNS sweep (one job) 0.995`, `+ 5 classical LNS sweeps 1.000`. The 1.000 comes from the classical sweeps, not from QAOA;
+>    - **the results table, stage by stage**: `Greedy incumbent 0.988`, `+ QAOA LNS sweep, 1 job (IonQ 1 nbhd/12q; local 6) 0.995`, `+ 5 classical LNS sweeps (exact) 1.000`. The 1.000 comes from the classical sweeps, not from QAOA;
 >    - **the seed line**: 7 is the project's fixed seed. Across 20 seeds the one-job QAOA-sampled sweep reaches the optimum on 3 and 0.995 on the other 17; with the classical sweeps, 8 of 20 reach 1.000 (`results/e_live_seeds.json`);
 >    - **the benchmark lines and the honest verdict**.
 >
@@ -108,6 +108,15 @@ We made these deliberately strong, because the comparison is only credible if th
 
 ## 4. Hybrid method
 
+**Live pipeline (conditioned LNS, this version).**
+1. Incumbent = the greedy schedule.
+2. Build neighbourhoods around it (≤ 12 qubits each). Each neighbourhood is conditioned on the rest of the schedule: a candidate is free only if it conflicts with nothing selected outside the neighbourhood, so no outside conflict can be broken. Details and controls are in §5.
+3. One warm-start CVaR-QAOA circuit per neighbourhood, with angles precomputed offline, all sampled in **one job** (see step 4 below for IonQ packing).
+4. Walk through the neighbourhoods in order. Apply the best sample that is still compatible with the current schedule, if it raises the total value. The result is never worse than greedy and always feasible.
+5. Run 5 more LNS sweeps with an exact classical sub-solver, labelled classical in the output.
+
+**v1 pipeline (kept for comparison).** Steps 1 and 5 below (fixed partition; stitch and repair) are v1 only, and its 0.949 is the baseline LNS improves on. Steps 2–4 (warm start, CVaR, one-job sampling and IonQ packing) are shared by both versions: LNS packs neighbourhoods exactly as v1 packed clusters.
+
 1. **Decompose.** Split the conflict graph into connected components. Any component over 12 nodes is split by repeated Kernighan–Lin bisection, and the most-linked pieces are merged back up to 12 qubits.
 2. **Warm start** (Egger, Mareček & Woerner, *Quantum* 5, 479, 2021).
    - Solve the LP relaxation with clique constraints. Plain edge constraints give an uninformative all-½ solution.
@@ -130,7 +139,7 @@ We made these deliberately strong, because the comparison is only credible if th
    - **Repair:** repeatedly drop the lowest-value candidate in a violated conflict, then greedily fill by value density.
    - The console logs the **net change**: drops and adds versus the stitched schedule.
 
-The **default Run** uses a small instance: the top 10 districts over the first 24 h. It has 68 candidates and 8 clusters of 5–12 qubits, with precomputed angles, so the browser does no optimisation.
+The **default Run** uses a small instance: the top 10 districts over the first 24 h. It has 68 candidates and 7 LNS neighbourhoods of 7–12 qubits, with precomputed angles, so the browser does no optimisation.
 
 ## 5. Results
 
@@ -142,7 +151,8 @@ The benchmark has 21 instances: the real event plus 20 seeded perturbations. Eac
 | --- | --- | --- | --- |
 | Greedy | 0.994 | 0.984 ± 0.024 | 0.899 |
 | Simulated annealing (1,024 restarts) | 0.996 | **0.997 ± 0.002** | 0.993 |
-| Hybrid QAOA (warm start, p=1) | 0.966 | 0.949 ± 0.038 | 0.886 |
+| v1 hybrid QAOA (fixed clusters + repair) | 0.966 | 0.949 ± 0.038 | 0.886 |
+| **LNS + QAOA (12 qubits, this version)** | 0.995 | **0.993 ± 0.009** | 0.960 |
 | *Control: same decomposition, exact per cluster* | 0.966 | 0.949 ± 0.038 | 0.886 |
 
 ![Schedule quality on 21 instances](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/ratios.png)
@@ -214,7 +224,7 @@ The binary column is a **count only**:
 - Cliques of the conflict graph are "at most one" groups. A greedy clique cover gives 25 groups for the full event, and a group of k candidates needs ⌈log₂(k+1)⌉ qubits.
 - That encoding adds multi-qubit terms whose gate cost is not included here.
 
-![Resource estimate](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/improve/docs/figures/resources.png)
+![Resource estimate](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/resources.png)
 
 **Reading it.** The full event as a single circuit needs 268 qubits and about 6,800 two-qubit gates on all-to-all hardware. Under the simple model, a useful single-shot success (0.5) needs two-qubit error near **1e-4** on all-to-all and near **3e-5** on a grid, about 3× lower because of SWAP overhead. Current commercial two-qubit errors are around 1e-3 or higher, so whole-problem QAOA is out of reach. The LNS pipeline sidesteps this by using ≤12-qubit circuits.
 

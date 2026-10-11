@@ -126,24 +126,28 @@ def diversity_chart():
     return fig
 
 
-def ratio_chart():
+def ratio_chart(lns_path: str = "results/e_lns.json"):
     """Approximation ratio per method over the 21 benchmark instances."""
     import matplotlib.pyplot as plt
 
     e = [i for i in json.load(open(E1_JSON))["instances"] if i["instance"] != "default"]
-    methods = [("greedy", "Greedy"), ("sa", "Simulated annealing"), ("hybrid_warm_p1", "Hybrid QAOA"),
-               ("decomp_exact", "Same split,\nexact per cluster")]
+    lns = json.load(open(lns_path))["part_a"]["qaoa_q12"]["per_instance_final"]
+    cols = [("Greedy", [i["methods"]["greedy"]["ratio"] for i in e]),
+            ("v1 hybrid QAOA\n(clusters + repair)", [i["methods"]["hybrid_warm_p1"]["ratio"] for i in e]),
+            ("LNS + QAOA\n(12 qubits)", [lns[i["instance"]] for i in e]),
+            ("Simulated annealing\n(full problem)", [i["methods"]["sa"]["ratio"] for i in e])]
     fig, ax = plt.subplots(figsize=(8, 3.8))
-    for k, (m, label) in enumerate(methods):
-        v = [i["methods"][m]["ratio"] for i in e]
+    for k, (label, v) in enumerate(cols):
         ax.scatter(np.full(len(v), k) + np.linspace(-0.15, 0.15, len(v)), v, s=18, color=BLUE, alpha=0.7, zorder=3)
         ax.plot([k - 0.25, k + 0.25], [np.mean(v)] * 2, color=INK, linewidth=2, zorder=4)
         ax.annotate(f"mean {np.mean(v):.3f}", (k, np.mean(v)), xytext=(0, -14), textcoords="offset points",
                     ha="center", fontsize=8, color=INK)
-    ax.set_xticks(range(len(methods)), [l for _, l in methods])
+    ax.set_xticks(range(len(cols)), [l for l, _ in cols])
     ax.set_ylabel("value / exact optimum", color=MUTED)
     _style(ax, f"Schedule quality on {len(e)} instances (dots = instances, bar = mean)")
-    fig.tight_layout()
+    fig.text(0.01, 0.01, "LNS with exact, SA or uniform-random sub-solvers gives the same 0.993: "
+             "the gain comes from the neighbourhood structure.", fontsize=8, color=MUTED)
+    fig.tight_layout(rect=(0, 0.04, 1, 1))
     return fig
 
 

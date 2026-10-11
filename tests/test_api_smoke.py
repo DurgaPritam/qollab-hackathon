@@ -43,7 +43,7 @@ def test_default_run_end_to_end_local_simulator():
     r = json.loads(run_default(be, shots=256))
     assert be.jobs == 1
     assert r["sampling"]["mode"] == "list" and not r["sampling"]["local"]
-    assert "counting_basic_simulator: all" in r["hybrid_label"] and r["precomputed_angles"]
+    assert "counting_basic_si" in r["hybrid_label"] and r["precomputed_angles"]
     assert r["methods"]["hybrid"]["ratio"] >= r["methods"]["hybrid_quantum_sweep"]["ratio"] >= r["methods"]["greedy"]["ratio"]
     # largest cluster submitted last (the Probabilities panel shows the last circuit)
     sizes = [c.num_qubits for c in be.sent[0]]
@@ -64,8 +64,8 @@ def test_ionq_default_budget_sends_largest_neighbourhood_only():
     assert s["mode"] == "packed" and s["error"] is None and s["remote_qubits"] <= 12
     assert be.sent[0].num_qubits == s["remote_qubits"] and be.sent[0].num_clbits == s["remote_qubits"]
     k, rest = len(s["remote"]), len(s["local"])
-    assert r["hybrid_label"].startswith(f"+ one QAOA-sampled LNS sweep (one job; IonQ: {k} neighbourhood")
-    assert f"local: {rest} neighbourhood" in r["hybrid_label"]
+    assert r["hybrid_label"].startswith(f"+ QAOA LNS sweep, 1 job (IonQ {k} nbhd/")
+    assert f"local {rest})" in r["hybrid_label"]
 
 
 @needs_default
@@ -124,7 +124,7 @@ def test_ionq_failure_is_labelled_local():
     be = Broken()
     r = json.loads(run_default(be, shots=64))
     assert be.jobs == 1
-    assert r["hybrid_label"] == "+ one QAOA-sampled LNS sweep (sampled locally - IonQ job failed)"
+    assert r["hybrid_label"] == "+ QAOA LNS sweep (local; IonQ job failed)"
     assert "ionq" not in r["hybrid_label"].lower().replace("ionq job failed", "")
 
 
@@ -190,3 +190,11 @@ def test_qaoa_row_never_carries_classical_value():
     assert "QAOA" in m["hybrid_quantum_sweep"]["label"]
     assert "QAOA" not in m["hybrid"]["label"] and "classical" in m["hybrid"]["label"]
     assert m["hybrid"]["ratio"] >= m["hybrid_quantum_sweep"]["ratio"] >= m["greedy"]["ratio"]
+
+
+def test_results_table_fits_90_columns(capsys):
+    from fsq.api import run_default
+    run_default(None)
+    out = capsys.readouterr().out
+    table = out[out.index("[4/4]"):].split("\n")[1:9]
+    assert max(len(line) for line in table if "-" * 20 not in line) <= 90
