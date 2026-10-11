@@ -4,42 +4,50 @@
 
 Built for Qollab × IonQ, theme **Quantum Impact**. Qiskit · MIT licence.
 
----
+## At a glance
 
-> ### How to run
-> 1. Open the project in **Chrome or Edge** (Brave, Opera and Firefox 153+ also work). **Safari cannot run Qollab projects.**
-> 2. Click **Run Project**. In *Select QPU*, choose one of:
->    - **Built-in simulator (24q):** about **25 s** on the first run (Qollab loads its packages) and about **9 s** after; our Python code itself takes about 1 s.
->    - **IonQ Aria 1 (25q):** a remote noise-model simulator; the run takes about **20–30 s plus any queue**. IonQ accepts **one circuit per job**. By default the run sends the **largest neighbourhood (12 qubits)** to IonQ as that one circuit and samples the other 6 locally; the console lists which ran where. See *IonQ qubit budget* below. Verified on Qollab (Oct 11, 2026): built-in simulator 1.1 s of Python, IonQ Aria 1 17.7 s, no errors.
->
->    *Run settings* offers `shots` (default 1024) and `charts` (default on).
-> 3. What the run does (the default scenario: top 10 districts over the first 24 h, 68 candidate images):
->    - builds the greedy schedule (the incumbent) and 7 neighbourhoods of at most 12 candidates around it, each conditioned on the rest of the schedule;
->    - samples one warm-start QAOA circuit per neighbourhood in **one job**, and applies each neighbourhood's best compatible sample if it raises the schedule value;
->    - runs 5 more LNS sweeps with an exact classical sub-solver (labelled classical);
->    - runs simulated annealing live and compares everything with the exact optimum;
->    - draws four figures.
-> 4. What to look for:
->    - **where each neighbourhood was sampled** (backend or local);
->    - **the results table, stage by stage**: `Greedy incumbent 0.988`, `+ QAOA LNS sweep, 1 job (IonQ 1 nbhd/12q; local 6) 0.995`, `+ 5 classical LNS sweeps (exact) 1.000`. The 1.000 comes from the classical sweeps, not from QAOA;
->    - **the seed line**: 7 is the project's fixed seed. Across 20 seeds the one-job QAOA-sampled sweep reaches the optimum on 3 and 0.995 on the other 17; with the classical sweeps, 8 of 20 reach 1.000 (`results/e_live_seeds.json`);
->    - **the benchmark lines and the honest verdict**.
->
->    Qollab's **Probabilities panel shows one circuit only**. On local simulators it is the largest neighbourhood, which is submitted last; on IonQ it is the single packed circuit. The console says which.
+- **Better schedules from the hybrid:** conditioned large-neighbourhood search (LNS) with QAOA averages **0.993** of the exact optimum on 21 instances, above greedy (**0.984**) and the v1 cluster-and-repair hybrid (**0.949**). Full-problem simulated annealing is still best at 0.997.
+- **The gain is from the method's structure, not from QAOA:** with the same neighbourhoods, exact and simulated-annealing sub-solvers reach the identical 0.993. QAOA's measured edge is sampling: **17× more probability** on each subproblem's optimum than uniform random sampling (354 of 354 subproblems).
+- **Trapped-ion connectivity pays off:** at 24 qubits, QAOA compiles to **~40% fewer two-qubit gates** all-to-all (372) than on a grid (630) or heavy-hex (625).
+- **Scale reality check:** the whole flood as one circuit needs **268 qubits** and two-qubit error near **1e-4**, about ten times better than today's hardware.
+- **Runs on Qollab** on the built-in simulator and IonQ Aria 1, one job per run, with every results row stating where it actually ran.
 
-> ### Honest verdict
-> **No quantum advantage.** On 21 instances (ratio to the exact optimum):
-> - v1 hybrid (independent clusters + repair) **0.949**, greedy **0.984**, conditioned LNS **0.993**, full-problem simulated annealing **0.997**.
-> - **The gain from 0.949 to 0.993 comes from the LNS neighbourhood structure, not from QAOA.** With 1,024 samples per neighbourhood, the exact, SA and uniform-random sub-solvers reach the identical 0.993.
-> - With 32 per neighbourhood, QAOA (32 shots) and SA (32 restarts × 100 sweeps) both still reach 0.993, the exact ceiling. Uniform random falls to 0.988 over feasible sets and 0.984 over all bitstrings.
->
-> What the quantum part adds, measured fairly:
-> - **sample efficiency**: QAOA puts **17× (median) more probability** on each subproblem's optimum than uniform random feasible sampling, on **354 of 354** subproblems. One SA restart still finds the optimum more often (0.70 vs 0.19 per sample), at the cost of 100 sweeps;
-> - **far fewer two-qubit gates** on all-to-all trapped-ion hardware: the full event as one QAOA circuit needs 6,760 two-qubit gates all-to-all against 22,905 on a grid and 32,124 on heavy-hex (p = 1).
->
-> We make **no quantum-advantage claim**.
+![Schedule quality on 21 instances](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/ratios.png)
 
----
+*Dots are instances, bars are means. With the same LNS neighbourhoods, exact, SA and random sub-solvers also give 0.993.*
+
+## How to run
+
+1. Open the project in **Chrome or Edge** (Brave, Opera and Firefox 153+ also work). **Safari cannot run Qollab projects.**
+2. Click **Run Project**. In *Select QPU*, choose one of:
+   - **Built-in simulator (24q):** about **25 s** on the first run (Qollab loads its packages) and about **9 s** after; our Python code itself takes about 1 s.
+   - **IonQ Aria 1 (25q):** a remote noise-model simulator; the run takes about **20–30 s plus any queue**. IonQ accepts **one circuit per job**, so the run sends the **largest neighbourhood (12 qubits)** to IonQ as that one circuit and samples the other 6 locally. The console lists which ran where (see *IonQ qubit budget* in section 4).
+   - Verified on Qollab (Oct 11, 2026): built-in simulator 1.1 s of Python, IonQ Aria 1 17.7 s, no errors.
+   - *Run settings* offers `shots` (default 1024) and `charts` (default on).
+3. **What the run does** (default scenario: top 10 districts over the first 24 h, 68 candidate images):
+   - builds the greedy schedule (the incumbent) and 7 neighbourhoods of at most 12 candidates around it, each conditioned on the rest of the schedule;
+   - samples one warm-start QAOA circuit per neighbourhood in **one job**, and applies each neighbourhood's best compatible sample if it raises the schedule value;
+   - runs 5 more LNS sweeps with an exact classical sub-solver (labelled classical);
+   - runs simulated annealing live, compares everything with the exact optimum, and draws four figures.
+4. **What to look for:**
+   - **where each neighbourhood was sampled** (backend or local);
+   - **the results table, stage by stage**: `Greedy incumbent 0.988`, then `+ QAOA LNS sweep, 1 job (IonQ 1 nbhd/12q; local 6) 0.995`, then `+ 5 classical LNS sweeps (exact) 1.000`. The 1.000 comes from the classical sweeps, not from QAOA;
+   - **the seed line**: 7 is the project's fixed seed. Across 20 seeds, the one-job QAOA-sampled sweep reaches the optimum on 3 and 0.995 on the other 17. With the classical sweeps, 8 of 20 reach 1.000;
+   - **the benchmark lines and the honest verdict**.
+5. Qollab's **Probabilities panel shows one circuit only**. On local simulators it is the largest neighbourhood, which is submitted last; on IonQ it is the single packed circuit. The console says which.
+
+## Honest verdict
+
+**No quantum advantage.** On 21 instances (ratio to the exact optimum):
+- v1 hybrid (independent clusters + repair) **0.949**, greedy **0.984**, conditioned LNS **0.993**, full-problem simulated annealing **0.997**.
+- **The gain from 0.949 to 0.993 comes from the LNS neighbourhood structure, not from QAOA.** With 1,024 samples per neighbourhood, the exact, SA and uniform-random sub-solvers reach the identical 0.993.
+- With 32 per neighbourhood, QAOA (32 shots) and SA (32 restarts × 100 sweeps) both still reach 0.993, the exact ceiling. Uniform random falls to 0.988 over feasible sets and 0.984 over all bitstrings.
+
+What the quantum part adds, measured fairly:
+- **sample efficiency**: QAOA puts **17× (median) more probability** on each subproblem's optimum than uniform random feasible sampling, on **354 of 354** subproblems. One SA restart still finds the optimum more often (0.70 vs 0.19 per sample), at the cost of 100 sweeps;
+- **far fewer two-qubit gates** on all-to-all trapped-ion hardware: the full event as one QAOA circuit needs 6,760 two-qubit gates all-to-all against 22,905 on a grid and 32,124 on heavy-hex (p = 1).
+
+We make **no quantum-advantage claim**.
 
 ## 1. The problem
 
@@ -155,7 +163,7 @@ The benchmark has 21 instances: the real event plus 20 seeded perturbations. Eac
 | **LNS + QAOA (12 qubits, this version)** | 0.995 | **0.993 ± 0.009** | 0.960 |
 | *v1 control: same fixed clusters, exact per cluster* | 0.966 | 0.949 ± 0.038 | 0.886 |
 
-![Schedule quality on 21 instances](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/ratios.png)
+*The chart in "At a glance" shows these 21 instances per method.*
 
 **v1 analysis: the decomposition insight.** This is what led to the LNS version. The v1 hybrid matched its control (same fixed clusters, exact answer per cluster) on **all 21 instances**: 0.949 vs 0.949. QAOA found the best answer inside every cluster, so **v1's gap to the global optimum came from splitting the problem, not from QAOA**. The live run quotes the v1 figure, 0.949, from `results/e1.json` as the baseline LNS improves on.
 
@@ -421,6 +429,6 @@ python3.12 -m venv .venv && .venv/bin/pip install -r preprocessing/requirements-
 | `tests/` | pytest suite |
 | `index.html`, `main.js`, `main.css`, `ui/` | Optional interactive web page (GitHub only). It is left out of the Qollab upload so Qollab runs `main.py` as a Python project. |
 
-**Links:** demo video: *link to be added* · repository: <https://github.com/DurgaPritam/qollab-hackathon>
+**Links:** demo video: *link to be added* · repository: [github.com/DurgaPritam/qollab-hackathon](https://github.com/DurgaPritam/qollab-hackathon)
 
 MIT licence: see `LICENSE`.
