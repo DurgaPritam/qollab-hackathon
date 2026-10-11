@@ -153,13 +153,13 @@ The benchmark has 21 instances: the real event plus 20 seeded perturbations. Eac
 | Simulated annealing (1,024 restarts) | 0.996 | **0.997 ± 0.002** | 0.993 |
 | v1 hybrid QAOA (fixed clusters + repair) | 0.966 | 0.949 ± 0.038 | 0.886 |
 | **LNS + QAOA (12 qubits, this version)** | 0.995 | **0.993 ± 0.009** | 0.960 |
-| *Control: same decomposition, exact per cluster* | 0.966 | 0.949 ± 0.038 | 0.886 |
+| *v1 control: same fixed clusters, exact per cluster* | 0.966 | 0.949 ± 0.038 | 0.886 |
 
 ![Schedule quality on 21 instances](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/ratios.png)
 
-**Decomposition insight.** The hybrid matches the control (same split, exact answer per cluster) on **all 21 instances**: 0.949 vs 0.949. QAOA finds the best answer inside every cluster, so the **gap to the global optimum comes from splitting the problem, not from QAOA**. The live run computes and prints this from `results/e1.json`.
+**v1 analysis: the decomposition insight.** This is what led to the LNS version. The v1 hybrid matched its control (same fixed clusters, exact answer per cluster) on **all 21 instances**: 0.949 vs 0.949. QAOA found the best answer inside every cluster, so **v1's gap to the global optimum came from splitting the problem, not from QAOA**. The live run quotes the v1 figure, 0.949, from `results/e1.json` as the baseline LNS improves on.
 
-With 1,024 shots, QAOA finds every cluster's optimum, so the loss comes from decomposition. The real conflict graph is one connected component, and in our partition into ≤12-qubit clusters **75% of conflicts (2,534 of 3,380) cross cluster boundaries**. Repair handles those conflicts but loses value in doing so.
+In v1, with 1,024 shots, QAOA found every cluster's optimum, so the loss came from the fixed decomposition. The real conflict graph is one connected component, and in our partition into ≤12-qubit clusters **75% of conflicts (2,534 of 3,380) cross cluster boundaries**. v1 repair handled those conflicts but lost value doing so. Conditioned LNS (next) avoids the problem: no conflict outside a neighbourhood can be broken.
 
 ### Conditioned large-neighbourhood search (LNS): the fix for the decomposition gap
 
@@ -259,22 +259,22 @@ The binary column is a **count only**:
   - This is an all-to-all estimate. On a grid the SWAP overhead would add more.
   - The live run therefore stays one-hot, and the encoding is an offline analysis. It pays off only where qubits, not gate fidelity, are the binding limit.
 
-### Fair diversity comparison: same QUBO, same 1,024-sample budget
+### Fair diversity comparison (v1 analysis): same QUBO, same 1,024-sample budget
 
-The question: does QAOA sampling give more distinct good backup plans, useful if priorities change?
+This comparison was run on the v1 pipeline: fixed clusters, then stitch and repair. It has not been rerun for LNS. The question: does QAOA sampling give more distinct good backup plans, useful if priorities change?
 
 | Level / method | Feasible rate | Distinct schedules ≥95% of optimum | Diversity (mean Hamming) |
 | --- | --- | --- | --- |
 | Per cluster: QAOA (1,024 shots) | 0.70 ± 0.05 | **1.37 ± 1.00** | 0.37 ± 0.77 |
 | Per cluster: SA (1,024 restarts, 100 sweeps) | **1.00** | 1.26 ± 0.72 | 0.36 ± 0.81 |
-| Full schedule: hybrid (stitched + repaired) | 1.00 | 136 ± 96 | 18.8 ± 1.8 |
+| Full schedule: v1 hybrid (stitched + repaired) | 1.00 | 136 ± 96 | 18.8 ± 1.8 |
 | Full schedule: SA (1,024 restarts, 1,000 sweeps) | 1.00 | **303 ± 96** | **26.4 ± 1.4** |
 
 ![QAOA vs SA at the same sample budget](https://raw.githubusercontent.com/DurgaPritam/qollab-hackathon/main/docs/figures/diversity.png)
 
 **Per cluster** (670 clusters with ≥4 candidates), QAOA averages **1.37** distinct schedules within 95% of optimal against SA's **1.26**, and the **error bars overlap**. QAOA had more in 59 clusters, fewer in 1, and the same number in 610. That is a small edge at best, and it costs feasibility: only **70%** of QAOA samples are feasible, against **100%** for SA.
 
-**For whole schedules, SA wins on diversity**: **303** distinct near-optimal schedules against **136** for the hybrid, and they are more varied (Hamming 26.4 vs 18.8). We report both levels because the per-cluster result alone would overstate what QAOA delivers.
+**For whole schedules, SA wins on diversity**: **303** distinct near-optimal schedules against **136** for the v1 hybrid, and they are more varied (Hamming 26.4 vs 18.8). We report both levels because the per-cluster result alone would overstate what QAOA delivers.
 
 ### Connectivity: what IonQ's all-to-all connectivity buys
 
@@ -297,11 +297,13 @@ This is QAOA at p=1; at p=2, 24 qubits need 744 / 1,271 / 1,178 two-qubit gates.
 
 *Est. success* = $(1 - 0.005)^{n_{2q}}$. This is a simple model with a stated error rate, **not a hardware measurement**.
 
-### Other experiments
+### Other experiments (v1 analysis)
+
+These ran on the v1 pipeline (fixed clusters + repair). The "final ratio" values are v1 schedules, not LNS.
 
 **Warm vs cold start (E3) and depth (E2)**, on 6 instances. P(opt) is the probability the QAOA state puts on each cluster's optimal schedule.
 
-| Variant | P(cluster optimum) | Cluster feasible rate | Final ratio |
+| Variant | P(cluster optimum) | Cluster feasible rate | Final ratio (v1) |
 | --- | --- | --- | --- |
 | Warm start, p=1 | **0.34** | **0.70** | 0.960 |
 | Warm start, p=2 | 0.30 | 0.62 | 0.960 |
@@ -310,18 +312,18 @@ This is QAOA at p=1; at p=2, 24 qubits need 744 / 1,271 / 1,178 two-qubit gates.
 
 - **Warm start puts 2.5× more probability on the optimum.** That is a real, measurable effect.
 - p=2 adds nothing, because CVaR with α=0.2 plateaus once the optimum holds 20% of the probability.
-- All four variants reach the same final schedule, because decomposition, not sampling, is the bottleneck.
+- All four variants reach the same final v1 schedule, because v1's fixed decomposition, not sampling, was the bottleneck. The LNS warm start uses the same p=1 recipe.
 
 **Noise (E4).** We ran the real event on Qiskit Aer with:
 - 0.1% depolarizing error on each 1-qubit gate;
 - 0.5% on each CX;
 - 1% readout error.
 
-Cluster feasibility drops from 0.70 to 0.57. The final schedule is unchanged at 0.966, because 1,024 shots still contain each cluster's optimum.
+Cluster feasibility drops from 0.70 to 0.57. The final v1 schedule is unchanged at 0.966, because 1,024 shots still contain each cluster's optimum.
 
 **Qubits vs size (E5).**
 
-| Horizon | Candidates (qubits) | Conflicts | Clusters ≤12 |
+| Horizon | Candidates (qubits) | Conflicts | v1 clusters ≤12 |
 | --- | --- | --- | --- |
 | 6 h | 44 | 357 | 5 |
 | 12 h | 63 | 561 | 8 |
@@ -345,7 +347,7 @@ Each image is treated as a single spot, whereas real SAR swaths cover several di
 - "People affected" is cumulative over three flood waves, so some people may be counted twice.
 - The pass geometry is from 2026 orbits, not 2022.
 
-**Better partitions are not just fewer cut conflicts.** We tried a partition that fills clusters up to 12 qubits, with uneven Kernighan–Lin splits and 5–10 restarts. On 8 instances it cut fewer conflicts (2,127 vs 2,461 on average), but schedule quality got *worse*: 0.955 vs 0.975 with exact per-cluster solves. Which conflicts are cut matters more than how many, so we kept the original partition. A value-aware partition is the obvious next step.
+**Better partitions are not just fewer cut conflicts (v1 analysis).** We tried a partition that fills clusters up to 12 qubits, with uneven Kernighan–Lin splits and 5–10 restarts. On 8 instances it cut fewer conflicts (2,127 vs 2,461 on average), but schedule quality got *worse*: 0.955 vs 0.975 with exact per-cluster solves. Which conflicts are cut matters more than how many, so we kept the original partition. Conditioned LNS then replaced the fixed partition altogether.
 
 **When quantum could matter:** conditioned LNS closes most of the decomposition gap with any sub-solver, and larger neighbourhoods help, so the lever is more candidates per circuit (larger devices or a denser encoding), not a better sampler. Quantum help would need:
 - devices large enough to hold whole connected components (hundreds of qubits);
@@ -406,7 +408,9 @@ python3.12 -m venv .venv && .venv/bin/pip install -r preprocessing/requirements-
 | `fsq/api.py` | Run-button entry point |
 | `fsq/formulate.py` | Candidates, values, conflicts, QUBO and Ising forms |
 | `fsq/baselines.py` | Greedy, SA, exact |
-| `fsq/decompose.py` | Clustering, stitch and repair |
+| `fsq/lns.py` | Conditioned LNS: neighbourhoods, sub-solvers, acceptance (live run) |
+| `fsq/binenc.py` | Binary (clique) encoding, offline analysis |
+| `fsq/decompose.py` | v1 clustering, stitch and repair (benchmarks only) |
 | `fsq/qaoa.py` | Warm/cold QAOA, CVaR, one-job sampling |
 | `fsq/connectivity.py` | Connectivity comparison |
 | `fsq/diversity.py`, `fsq/metrics.py` | Diversity comparison and metrics |
@@ -417,6 +421,6 @@ python3.12 -m venv .venv && .venv/bin/pip install -r preprocessing/requirements-
 | `tests/` | pytest suite |
 | `index.html`, `main.js`, `main.css`, `ui/` | Optional interactive web page (GitHub only). It is left out of the Qollab upload so Qollab runs `main.py` as a Python project. |
 
-**Links:** demo video, *to be added* · repository: <https://github.com/DurgaPritam/qollab-hackathon>
+**Links:** demo video: *link to be added* · repository: <https://github.com/DurgaPritam/qollab-hackathon>
 
 MIT licence: see `LICENSE`.
