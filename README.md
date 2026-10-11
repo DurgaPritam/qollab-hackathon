@@ -218,6 +218,37 @@ The binary column is a **count only**:
 
 **Reading it.** The full event as a single circuit needs 268 qubits and about 6,800 two-qubit gates on all-to-all hardware. Under the simple model, a useful single-shot success (0.5) needs two-qubit error near **1e-4** on all-to-all and near **3e-5** on a grid, about 3× lower because of SWAP overhead. Current commercial two-qubit errors are around 1e-3 or higher, so whole-problem QAOA is out of reach. The LNS pipeline sidesteps this by using ≤12-qubit circuits.
 
+### Binary (qubit-efficient) encoding: more candidates per qubit
+
+`fsq/binenc.py`, `preprocessing/run_binenc.py` → `results/e_binenc.json`.
+
+**The encoding.**
+- Candidates that pairwise conflict (a clique) can have at most one selected.
+- A greedy clique cover groups them, and a group of k candidates is stored in ⌈log₂(k+1)⌉ qubits: code 0 = none, codes 1..k = one candidate, higher codes invalid and penalised.
+- Tests check that the encoded energy equals the one-hot energy on every valid state, that invalid codes never win, and that the minimum is the true optimum.
+- With neighbourhoods capped at **12 encoded qubits**, each holds 17–25 candidates instead of ≤12.
+
+**Inside LNS** (same 21 instances, seeds and 10 sweeps; same neighbourhoods for every sub-solver):
+
+| Sub-solver | Budget per neighbourhood | Mean ± sd | Worst | Optimal |
+| --- | --- | --- | --- | --- |
+| *One-hot, 12 qubits, exact (from the table above)* | – | 0.993 ± 0.009 | 0.960 | 4/21 |
+| Binary, 12 qubits, exact (MILP, ceiling) | – | **0.995 ± 0.009** | 0.960 | 7/21 |
+| Binary, QAOA on the encoded circuit (warm start, CVaR, p=1) | 1,024 shots | 0.995 ± 0.009 | 0.960 | 7/21 |
+| Binary, QAOA | 32 shots | 0.995 ± 0.009 | 0.960 | 7/21 |
+| SA on the same neighbourhoods (one-hot) | 1,024 restarts × 100 sweeps | 0.995 ± 0.009 | 0.960 | 7/21 |
+| SA | 32 restarts × 100 sweeps | 0.995 ± 0.009 | 0.960 | 7/21 |
+| Uniform random encoded bitstrings | 1,024 draws | 0.994 ± 0.009 | 0.960 | 3/21 |
+| Uniform random encoded bitstrings | 32 draws | 0.990 ± 0.014 | 0.946 | 0/21 |
+
+- **Twice the candidates per qubit raises the ceiling at the same qubit count**: 0.9954 vs 0.9928 (better on 12 instances, worse on 2). That matches 16 one-hot qubits (0.9949).
+- QAOA reaches the ceiling at both 1,024 and 32 shots. SA at 32 restarts differs on **one** instance (0.9922 vs 0.9955 on perturbed-9), so this is not a trend.
+- **Sampler quality** on 72 identical subproblems (19.5 candidates on 11.7 qubits):
+  - P(optimum) per sample: QAOA **0.13**, uniform random encoded 0.0004 (QAOA higher on 72/72), SA restart 0.48.
+- **The price is gates.** Conflicts between groups become multi-qubit Z terms (weight up to 7). Built as parity ladders on all-to-all hardware, the encoded cost layer averages **760 CNOTs vs 120** for the one-hot circuit of the same subproblem (p = 1): about half the qubits for about 6× the two-qubit gates.
+  - This is an all-to-all estimate. On a grid the SWAP overhead would add more.
+  - The live run therefore stays one-hot, and the encoding is an offline analysis. It pays off only where qubits, not gate fidelity, are the binding limit.
+
 ### Fair diversity comparison: same QUBO, same 1,024-sample budget
 
 The question: does QAOA sampling give more distinct good backup plans, useful if priorities change?
@@ -349,6 +380,7 @@ python3.12 -m venv .venv && .venv/bin/pip install -r preprocessing/requirements-
 .venv/bin/python preprocessing/run_lns.py             # conditioned LNS + controls -> results/e_lns.json (~5 min)
 .venv/bin/python preprocessing/run_live_seeds.py      # live recipe over 20 seeds -> results/e_live_seeds.json
 .venv/bin/python preprocessing/run_resources.py       # resource estimate -> results/e_resources.json
+.venv/bin/python preprocessing/run_binenc.py          # binary encoding inside LNS -> results/e_binenc.json (~6 min)
 .venv/bin/python preprocessing/save_figures.py        # -> docs/figures/*.png
 .venv/bin/python preprocessing/build_ui_data.py       # -> ui/data.js (optional interactive page)
 .venv/bin/python -m pytest -q tests                   # all tests

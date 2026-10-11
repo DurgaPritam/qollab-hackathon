@@ -45,14 +45,14 @@ def local_problem(free: list[int], w, edges_adj: list[list[int]]):
 
 
 def release_neighbourhoods(x: np.ndarray, adj: list[list[int]], max_free: int,
-                           seed: int, randomized: bool = True) -> list[list[int]]:
+                           seed: int, randomized: bool = True, size=len) -> list[list[int]]:
     """Neighbourhoods for one sweep, built around the current schedule (not a fixed
     partition, which cannot move a district's image from one cluster to another).
 
     For each selected candidate s (in random order): release s, then keep releasing the
     selected candidate that unlocks the most still-blocked candidates, while the free set
     (released candidates + every unselected candidate blocked only by released ones) has at
-    most `max_free` members. Each neighbourhood is a list of free candidates; re-optimising
+    most `max_free` qubits (size(free); one-hot by default, see binenc for binary). Each neighbourhood is a list of free candidates; re-optimising
     it can swap a released image for other images it was blocking.
     """
     rng = np.random.default_rng(seed)
@@ -70,7 +70,7 @@ def release_neighbourhoods(x: np.ndarray, adj: list[list[int]], max_free: int,
             for v in sorted(cand):
                 r2 = released | {v}
                 f2 = set(r2) | {u for u, b in blockers.items() if b and b <= r2}
-                if len(f2) <= max_free:
+                if size(sorted(f2)) <= max_free:
                     fits.append((len(f2), v))
             if not fits:
                 break
@@ -79,8 +79,11 @@ def release_neighbourhoods(x: np.ndarray, adj: list[list[int]], max_free: int,
             else:
                 released.add(max(fits)[1])
         free = sorted(set(released) | {u for u, b in blockers.items() if b and b <= released})
-        if len(free) > max_free:          # a single release can already be too big: trim
-            free = sorted(released) + [u for u in free if u not in released][: max_free - len(released)]
+        if size(free) > max_free:          # a single release can already be too big: trim
+            rest = [u for u in free if u not in released]
+            while rest and size(sorted(released) + rest) > max_free:
+                rest.pop()
+            free = sorted(sorted(released) + rest)
         key = tuple(free)
         if key not in seen and len(free) > 1:
             seen.add(key)
@@ -182,7 +185,7 @@ def apply_move(x: np.ndarray, nodes: list[int], new_local: np.ndarray, w) -> boo
 # --------------------------------------------------------------------------- LNS driver
 
 def run_lns(w, edges, clusters, x0, propose, sweeps: int, budget: int,
-            seed: int, max_free: int = 12, randomized: bool = True) -> dict:
+            seed: int, max_free: int = 12, randomized: bool = True, size=None) -> dict:
     """Sequential LNS: each neighbourhood is conditioned on the current schedule.
 
     clusters: a fixed list of node lists, or "release" for neighbourhoods rebuilt around
@@ -196,7 +199,8 @@ def run_lns(w, edges, clusters, x0, propose, sweeps: int, budget: int,
     moves = 0
     calls = 0
     for s in range(sweeps):
-        hoods = (release_neighbourhoods(x, adj, max_free, seed * 7919 + s, randomized)
+        hoods = (release_neighbourhoods(x, adj, max_free, seed * 7919 + s, randomized,
+                                        size or len)
                  if isinstance(clusters, str) else clusters)
         for k, nodes in enumerate(hoods):
             free = conditioned_free(nodes, x, adj)
